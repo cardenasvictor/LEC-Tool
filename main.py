@@ -164,7 +164,7 @@ axes[0].grid(True, which='both')
 axes[0].set_xlabel('Economic Loss [$MM]')
 axes[0].set_ylabel('Annual Frequency of Exceedance')
 axes[0].set_title('Loss Exceedance Curve (LEC)')
-axes[0].text(0.05, 0.8, f'AAL = ${aal:,.2f} MM', transform=axes[0].transAxes, fontsize=10,
+axes[0].text(0.05, 0.8, f'AAL = ${np.ceil(aal):,.0f} MM', transform=axes[0].transAxes, fontsize=10,
              bbox=dict(facecolor='white', edgecolor='black', boxstyle='round'))
 axes[0].legend()
 
