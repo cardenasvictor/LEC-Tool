@@ -1,0 +1,19 @@
+start_date,year,cause,econ_loss,database
+1990-01-15,1990,Meteorological,5.544,EM-DAT
+1990-05-20,1990,Hydrological,5.421,EM-DAT
+1995-10-15,1995,Hydrological,1.056,EM-DAT
+2000-10-03 00:00:00,2000,Hydrological,36.88849520513938,DesInventar
+2000-09-29 00:00:00,2000,Meteorological,476.45362572366435,DesInventar
+2001-08-19 00:00:00,2001,Meteorological,15.944274279942718,DesInventar
+2001-10-08,2001,Meteorological,454.551,EM-DAT
+2002-09-29 00:00:00,2002,Climatological,0.8719634004169562,DesInventar
+2007-08-21,2007,Meteorological,230.53,EM-DAT
+2008-03-27 00:00:00,2008,Climatological,1.6026647002705496,DesInventar
+2008-05-09 00:00:00,2008,Hydrological,0.33218868332880486,DesInventar
+2008-05-29 00:00:00,2008,Hydrological,0.11233222580987216,DesInventar
+2008-06-01 00:00:00,2008,Hydrological,2.839862113195131,DesInventar
+2008-10-16 00:00:00,2008,Hydrological,116.57021,DesInventar
+2008-06-02 00:00:00,2008,Meteorological,1.0519308305412154,DesInventar
+2009-05-28 00:00:00,2009,Geophysical,0.09367,DesInventar
+2010-12-02 00:00:00,2010,Climatological,0.2157860039989819,DesInventar
+2010-10-24 00:00:00,2010,Meteorological,29.983481799252175,DesInventar

@@ -1,0 +1,4 @@
+tail_loss,tail_aep,cause,database
+2685,0.01,FL,BID
+2815,0.005,FL,BID
+2925,0.002,FL,BID

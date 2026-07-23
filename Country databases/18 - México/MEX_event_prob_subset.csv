@@ -1,0 +1,6 @@
+tail_loss,tail_aep,cause,database
+3200,0.1,EQ,GEM
+21800,0.02,EQ,GEM
+45400,0.01,EQ,GEM
+145300,0.002,EQ,GEM
+209800,0.001,EQ,GEM

@@ -1,0 +1,15 @@
+start_date,year,cause,econ_loss,database
+8/16/1992 0:00,1992,Meteorological,250,EM-DAT
+7/31/1995 0:00,1995,Meteorological,0.4,EM-DAT
+9/7/1999 0:00,1999,Meteorological,450,EM-DAT
+10/29/2001 0:00,2001,Meteorological,300,EM-DAT
+8/25/2004 0:00,2004,Meteorological,1000,EM-DAT
+9/13/2004 0:00,2004,Meteorological,550,EM-DAT
+10/15/2005 0:00,2005,Meteorological,6.4,EM-DAT
+1/9/2008 0:00,2008,Meteorological,200,EM-DAT
+8/20/2011 0:00,2011,Meteorological,40,EM-DAT
+1/15/2013 0:00,2013,Meteorological,45,EM-DAT
+9/28/2015 0:00,2015,Meteorological,90,EM-DAT
+9/28/2016 0:00,2016,Meteorological,600,EM-DAT
+8/30/2017 0:00,2017,Meteorological,2,EM-DAT
+8/24/2019 0:00,2019,Meteorological,3400,EM-DAT
