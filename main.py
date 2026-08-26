@@ -110,8 +110,8 @@ for name, arr in {'inv': inv, 'rbc': rbc, 'hor': hor}.items():
 event_loss_df = pd.read_csv(DATA_DIR / 'LEC_event_loss_example.csv')
 
 tail_curve_df = pd.read_csv(DATA_DIR / 'tail_curve_example.csv')
-tail_loss = tail_curve_df['tail_loss'].to_numpy(dtype=float)
-tail_aep  = tail_curve_df['tail_aep'].to_numpy(dtype=float)
+tail_loss = loss_scale_factor * tail_curve_df['tail_loss'].to_numpy(dtype=float)
+tail_aep  = freq_scale_factor * tail_curve_df['tail_aep'].to_numpy(dtype=float)
 
 # ppo_example.csv is a single headerless row: catalogue_length comma-separated amounts
 ppo_schedule = pd.read_csv(DATA_DIR / 'ppo_example.csv', header=None).iloc[0].tolist()
