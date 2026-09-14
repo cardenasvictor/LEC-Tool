@@ -221,3 +221,6 @@ Thumbs.db
 # Carpetas de entornos virtuales
 venv/
 env/
+
+# LEC Tool run outputs
+outputs/
