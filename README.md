@@ -1,26 +1,40 @@
-# LEC Tool v2: Cálculo de curvas de excedencia de pérdidas y evaluación de estrategias de gestión de riesgo
+# LEC Tool v3: Cálculo de curvas de excedencia de pérdidas, evaluación de estrategias de gestión de riesgo y análisis costo-beneficio
 
-La herramienta **LEC Tool** consiste en una plataforma desarrollada por el **Banco Interamericano de Desarrollo** con el propósito de derivar curvas de excedencia de pérdidas (LEC) a partir de registros históricos de desastres. Esta plataforma está diseñada para estimar la tasa de excedencia anual asociada a valores específicos de pérdidas económicas. La curva LEC resultante se utiliza posteriormente en análisis de riesgo y en la toma de decisiones para la gestión de desastres, particularmente para la selección de estrategias de transferencia y/o reducción de riesgo.
+La herramienta **LEC Tool** consiste en una plataforma desarrollada por el **Banco Interamericano de Desarrollo** con el propósito de derivar curvas de excedencia de pérdidas (LEC) a partir de registros históricos de desastres. Esta plataforma está diseñada para estimar la tasa de excedencia anual asociada a valores específicos de pérdidas económicas. La curva LEC resultante se utiliza posteriormente en análisis de riesgo y en la toma de decisiones para la gestión de desastres, particularmente para la selección de estrategias de transferencia y/o reducción de riesgo, y para su evaluación costo-beneficio.
 
-![version](https://img.shields.io/badge/version-2.0.1-blue)
+![version](https://img.shields.io/badge/version-3.0.0-blue)
 
 ---
 
 # ✨ Descripción
 
-El motor de cálculo del LEC Tool está implementado en un conjunto de módulos Python desarrollados por el equipo de Gestión de Riesgos de Desastres del Banco Interamericano de Desarrollo. La arquitectura de la versión 2 separa la lógica de cálculo de la interfaz de usuario, facilitando la integración con plataformas web externas.
+El motor de cálculo del LEC Tool está implementado en un conjunto de módulos Python desarrollados por el equipo de Gestión de Riesgos de Desastres del Banco Interamericano de Desarrollo. La versión 3 separa completamente los **insumos del usuario** (archivo `config.toml`) del código de cálculo, y agrupa todos los resultados de una corrida en una carpeta de salida identificada por el usuario.
+
+## Novedades de la versión 3
+
+- **Archivo de configuración único** (`config.toml`): todos los parámetros de la corrida se definen ahí. No es necesario editar código.
+- **Un solo punto de entrada**: `python main.py` ejecuta el flujo completo.
+- **Módulo de análisis costo-beneficio** (`cba/`): indicadores B/C, brecha de financiamiento, eficiencia (CM, MV, OMV), Costo Neto Comparado (CNC) y costo-efectividad de la reducción de riesgo.
+- **Etapas opcionales**: la reducción ex-ante del riesgo (DRR) y el CBA se ejecutan solo si se activan en la configuración. Una estrategia sin PPO no requiere el archivo de calendario del PPO.
+- **Resultados persistentes**: todas las figuras, el reporte principal, el reporte CBA, las estadísticas y una copia de la configuración se guardan en `outputs/<id>/` con el identificador de la corrida como prefijo.
+- **Reporte principal** con resumen de la curva LEC, PML por periodo de retorno, estadísticas de la estrategia, probabilidades de brecha de financiamiento (umbrales al 25 %, 50 %, 75 % y 100 % de la pérdida máxima de la curva LEC), resumen de la DRR y del CBA.
 
 ## Módulos
 
 | Módulo | Descripción |
 | --- | --- |
+| `main.py` | Punto de entrada. Orquesta las etapas del flujo según `config.toml` |
+| `config.toml` | Insumos del usuario (ver `docs/CONFIG.md`) |
+| `config_loader.py` | Lectura y validación de la configuración; construcción de los objetos que usan los módulos |
 | `lec_core.py` | Cálculo de la curva LEC empírica, intervalos de confianza por bootstrap, y curva híbrida |
-| `simulation.py` | Generación de catálogos sintéticos de pérdidas mediante simulación estocástica (Poisson + muestreo inverso) con Common Random Numbers |
-| `risk_management.py` | Mecanismos de cobertura financiera: seguro paramétrico, PPO, CCF, DDO |
-| `risk_reduction.py` | Modelado de reducción del riesgo ex-ante: calibración de desplazamiento de curva LEC y generación de catálogo reducido |
-| `utils.py` | Funciones auxiliares compartidas entre módulos |
 | `hybrid_lec.py` | Construcción de curva híbrida mediante blending log-log entre curva empírica y cola probabilística |
-| `main.py` | Script de demostración completo: carga datos, ejecuta todos los módulos y genera visualizaciones |
+| `simulation.py` | Generación de catálogos sintéticos de pérdidas (Poisson + muestreo inverso) con Common Random Numbers |
+| `risk_management.py` | Mecanismos de cobertura financiera: seguro paramétrico, PPO, CCF, DDO |
+| `risk_reduction.py` | Reducción del riesgo ex-ante: calibración de desplazamiento de la curva LEC y catálogo reducido |
+| `plots.py` | Generación de todas las figuras |
+| `reporting.py` | Estadísticas, probabilidades de brecha, PML y reporte principal |
+| `utils.py` | Funciones auxiliares compartidas |
+| `cba/` | Paquete de análisis costo-beneficio (ver más abajo) |
 
 ---
 
@@ -28,27 +42,44 @@ El motor de cálculo del LEC Tool está implementado en un conjunto de módulos 
 
 ```
 /
+├── main.py                 punto de entrada
+├── config.toml             configuración de la corrida (editar aquí)
+├── config_loader.py
 ├── lec_core.py
+├── hybrid_lec.py
 ├── simulation.py
 ├── risk_management.py
 ├── risk_reduction.py
+├── plots.py
+├── reporting.py
 ├── utils.py
-├── hybrid_lec.py
-├── main.py
+├── cba/
+│   ├── config.py           parámetros por defecto del CBA (dataclasses)
+│   ├── costs.py            funciones de costo y servicio de deuda a valor presente
+│   ├── core.py             indicadores centrales (B/C, pérdida no pagada, B/UL)
+│   ├── efficiency.py       Cost Multiple, Money Value, OMV
+│   ├── cnc.py              Costo Neto Comparado (ex-ante vs deuda ex-post)
+│   ├── diagnostics.py      costo-efectividad de la DRR
+│   ├── discounting.py      descuento a valor presente
+│   ├── engine.py           motor del CBA (run_cba)
+│   └── reports.py          reporte de texto y figura del CBA
+├── data/
+│   ├── LEC_event_loss_example.csv
+│   ├── ppo_example.csv
+│   └── tail_curve_example.csv
+├── Country databases/      catálogos y colas probabilísticas por país
+├── docs/
+│   └── CONFIG.md           referencia de todas las claves de config.toml
+├── outputs/                resultados (una subcarpeta por corrida; no se versiona)
 ├── requirements.txt
-├── .devcontainer/
-│   └── devcontainer.json
-└── data/
-    ├── LEC_event_loss_example.csv
-    ├── ppo_example.csv
-    └── tail_curve.csv
+└── .devcontainer/
 ```
 
 ---
 
 # ⚙️ Prerrequisitos
 
-Python 3.11 o superior con los siguientes paquetes:
+Python 3.11 o superior (la configuración se lee con `tomllib`, incluido en la biblioteca estándar) con los siguientes paquetes:
 
 ```
 numpy>=1.26.0
@@ -67,35 +98,54 @@ pip install -r requirements.txt
 
 # 🚀 Uso
 
-## Ejecutar el script de demostración
+1. Editar `config.toml` (identificador de la corrida, archivos de entrada, parámetros de simulación, estrategia, DRR, CBA).
+2. Ejecutar:
 
 ```bash
 python main.py
 ```
 
-Este script ejecuta el flujo completo utilizando los datos de ejemplo incluidos en la carpeta `data/`:
+Opcionalmente puede indicarse otro archivo de configuración: `python main.py mi_config.toml`.
 
-1. Carga el catálogo histórico de pérdidas
-2. Calcula la curva LEC empírica con intervalos de confianza
-3. Construye la curva híbrida (opcional)
-4. Genera catálogos sintéticos mediante simulación estocástica
-5. Evalúa la Estrategia 1 de gestión del riesgo (CCRIF + PPO + CCF + DDO)
-6. Aplica reducción del riesgo ex-ante y evalúa la estrategia sobre el catálogo reducido
-7. Genera todos los gráficos de resultados
+El flujo completo es:
+
+1. Carga del catálogo histórico de pérdidas (y de la cola probabilística y el calendario PPO si aplican)
+2. Curva LEC empírica con intervalos de confianza; curva híbrida si `lec.hybrid_curve = true`
+3. Generación de catálogos sintéticos
+4. Evaluación de la estrategia financiera sobre el catálogo base
+5. Reducción del riesgo ex-ante y reevaluación de la estrategia sobre el catálogo reducido (si `risk_reduction.enabled = true`)
+6. Análisis costo-beneficio (si `cba.enabled = true`), incluida la comparación DRR-CBA cuando la DRR está activa
+7. Escritura de figuras, reporte principal, reporte CBA y estadísticas
+
+Por defecto las figuras solo se guardan; con `run.show_figures = true` también se abren en pantalla.
 
 ## Archivos de entrada
 
-| Archivo | Columnas / formato | Descripción |
+| Archivo (clave en `[inputs]`) | Columnas / formato | Descripción |
 | --- | --- | --- |
-| `LEC_event_loss_example.csv` | `year`, `econ_loss` | Catálogo histórico de pérdidas por evento ($MM) |
-| `ppo_example.csv` | fila sin encabezado | `catalogue_length` valores de cobertura PPO disponible por año ($MM) |
-| `tail_curve.csv` | `tail_loss`, `tail_aep` | Cola probabilística para la curva híbrida: pérdidas ($MM) y tasas de excedencia anuales |
+| `event_loss_file` | `year`, `econ_loss` | Catálogo histórico de pérdidas por evento ($MM). Obligatorio |
+| `tail_curve_file` | `tail_loss`, `tail_aep` | Cola probabilística para la curva híbrida ($MM, tasa anual de excedencia). Solo si `lec.hybrid_curve = true` |
+| `ppo_schedule_file` | fila sin encabezado | `catalogue_length` valores de cobertura PPO disponible por año ($MM). Solo si la estrategia incluye un instrumento `ppo` |
 
-El formato del catálogo de pérdidas se puede descargar [en este link](data/LEC_event_loss_example.csv).
+Los formatos de ejemplo están en la carpeta [`data/`](data/). La carpeta `Country databases/` contiene catálogos y colas probabilísticas por país que pueden referenciarse directamente desde `config.toml`.
 
-El formato del inventario de puntos probabilistas se puede descargar [en este link](data/tail_curve.csv).
+## Archivos de salida (`outputs/<id>/`)
 
-El formato del archivo PPO se puede descargar [en este link](data/ppo_example.csv).
+| Archivo | Contenido |
+| --- | --- |
+| `<id>_01_lec_curve.png` | Curva LEC empírica, banda bootstrap, curva híbrida y pérdidas históricas anuales |
+| `<id>_02_lec_analytical_vs_simulated.png` | Curva LEC analítica vs. empírica de los eventos simulados |
+| `<id>_03_catalogue_statistics.png` | Estadísticas de pérdidas anuales simuladas |
+| `<id>_04_strategy_payouts_base.png` | Pagos de los instrumentos sobre el catálogo mostrado (base) |
+| `<id>_05_drr_investment.png` | Inversión DRR por año (solo con DRR) |
+| `<id>_06_reduced_lec_curves.png` | Familia de curvas LEC reducidas (solo con DRR) |
+| `<id>_07_strategy_payouts_reduced.png` | Pagos de los instrumentos sobre el catálogo reducido (solo con DRR) |
+| `<id>_08_horizon_loss_distribution.png` | Distribución de la pérdida acumulada en el horizonte |
+| `<id>_09_cba_results.png` | Figura resumen del CBA (solo con CBA) |
+| `<id>_report.txt` | Reporte principal de resultados |
+| `<id>_statistics.csv` | Medianas de pérdida, cobertura, retención y no cubierto (total y fiscal) por escenario |
+| `<id>_cba_report.txt` | Reporte completo del CBA (solo con CBA) |
+| `<id>_config_used.toml` | Copia de la configuración utilizada |
 
 ---
 
@@ -103,89 +153,52 @@ El formato del archivo PPO se puede descargar [en este link](data/ppo_example.cs
 
 ## lec_core.py
 
-```python
-from lec_core import compute_empirical_lec, build_hybrid_lec
-```
-
 **`compute_empirical_lec(event_loss_df, loss_scale_factor, freq_scale_factor, B, random_seed)`**
-Calcula la curva LEC empírica a partir de un catálogo histórico de pérdidas. Aplica bootstrap (B réplicas) para estimar intervalos de confianza al 90%. Devuelve un dict con la curva empírica, CIs (p05, p50, p95, mean), estadísticas globales (AAL, min, max, total) y la curva en formato `[[loss, rate], ...]`.
+Calcula la curva LEC empírica a partir de un catálogo histórico de pérdidas. Aplica bootstrap (B réplicas) para estimar intervalos de confianza al 90 %. Devuelve un dict con la curva empírica, CIs (p05, p50, p95, mean), estadísticas globales (AAL, min, max, total) y la curva en formato `[[loss, rate], ...]`.
 
-**`build_hybrid_lec(lec_result, tail_loss, tail_aep)`**
-Combina la curva empírica con una cola probabilística mediante blending log-log. Devuelve la curva híbrida y su AAL.
+**`build_hybrid_lec(lec_curve, tail_loss, tail_aep)`**
+Combina la curva empírica con una cola probabilística mediante blending log-log automático. Devuelve la curva híbrida y su AAL.
 
 ## simulation.py
 
-```python
-from simulation import build_inv_cdf, make_random_streams, generate_synthetic_catalogue
-```
-
-**`generate_synthetic_catalogue(LEC_curve_df, catalogue_length, simulation_number, seed)`**
-Genera `simulation_number` catálogos sintéticos de pérdidas de longitud `catalogue_length` años mediante un proceso de Poisson homogéneo con muestreo inverso. Devuelve los catálogos, DataFrames de pérdidas anuales agregadas, y los streams de números aleatorios (CRN) necesarios para la reducción ex-ante.
+**`generate_synthetic_catalogue(lec_curve, catalogue_length, simulation_number, random_seed)`**
+Genera `simulation_number` catálogos sintéticos de longitud `catalogue_length` años mediante un proceso de Poisson homogéneo con muestreo inverso. Devuelve los catálogos, las pérdidas anuales agregadas y los streams de números aleatorios (CRN) necesarios para la reducción ex-ante.
 
 ## risk_management.py
 
-```python
-from risk_management import apply_strategy
-```
-
 **`apply_strategy(event_catalogue, drm_configs, catalogue_length)`**
-Aplica una estrategia de gestión del riesgo definida como lista de dicts sobre todos los catálogos sintéticos. Devuelve los DataFrames de pago por instrumento y la cobertura total. Cada dict debe incluir `'name'` (etiqueta para gráficos) y `'type'` (instrumento), además de los parámetros específicos del instrumento.
+Aplica una estrategia definida como lista de dicts sobre todos los catálogos sintéticos. Devuelve los DataFrames de pago por instrumento y la cobertura total. En la versión 3 la lista se construye automáticamente desde los bloques `[[strategy.instruments]]` de `config.toml`.
 
-Instrumentos disponibles (`'type'`):
-
-| Tipo | Instrumento | Parámetros clave |
+| Tipo | Instrumento | Parámetros de pago |
 | --- | --- | --- |
-| `'insurance'` | Seguro paramétrico (ej. CCRIF) | `attachment_point`, `exhaustion_point`, `ceding_percentage` |
-| `'ppo'` | PPO de activación única por catálogo | `ppo_schedule`, `ppo_loss_trigger` |
-| `'ccf'` | CCF con techo acumulativo | `ccf_maximum`, `ccf_person`, `Pop_exposed` |
-| `'ddo'` | DDO con umbral de activación y pago fijo | `ddo_threshold`, `ddo_available` |
+| `insurance` | Seguro paramétrico (ej. CCRIF) | `attachment_point`, `exhaustion_point`, `ceding_percentage` |
+| `ppo` | PPO de activación única por catálogo (se activa con el CCF) | calendario leído de `ppo_schedule_file` |
+| `ccf` | CCF con techo acumulativo | `ccf_maximum`, `ccf_person`, `Pop_exposed` |
+| `ddo` | DDO con umbral de activación y pago fijo | `ddo_threshold`, `ddo_available` |
 
-> La cobertura total de todos los instrumentos está limitada automáticamente a no superar la pérdida bruta por evento (mediante escala proporcional).
-
-Ejemplo de configuración:
-
-```python
-drm_configs = [
-    {
-        'name': 'CCRIF',
-        'type': 'insurance',
-        'attachment_point': 50,
-        'exhaustion_point': 190,
-        'ceding_percentage': 0.066,
-    },
-    {
-        'name': 'BID PPO',
-        'type': 'ppo',
-        'ppo_schedule': [0, 2, 10, 25, 35, 42, 46, 46, 46, 46],
-        'ppo_loss_trigger': 120,
-    },
-    {
-        'name': 'BID CCF',
-        'type': 'ccf',
-        'ccf_maximum': 300,
-        'ccf_person': 1650,
-        'Pop_exposed': 10.83e6,
-    },
-    {
-        'name': 'BID DDO',
-        'type': 'ddo',
-        'ddo_threshold': 120,   # $MM — pérdida mínima para activación
-        'ddo_available': 110,   # $MM — pago fijo al activarse
-    },
-]
-```
+> La cobertura total de todos los instrumentos está limitada automáticamente a no superar la pérdida bruta por evento (escala proporcional). Un `ppo` requiere un `ccf` en la misma estrategia.
 
 ## risk_reduction.py
 
-```python
-from risk_reduction import generate_reduced_catalogue
-```
-
-**`calibrate_LEC_AAL(Ct, L, lam)`**
-Calibra por bisección el parámetro alpha que desplaza la curva LEC para lograr exactamente `Ct` de reducción en AAL.
+**`compute_reduction_schedule(inv, rbc, hor, discount_rate)`**
+Convierte los vectores anuales de inversión, relación beneficio-costo y horizonte de beneficios en la reducción acumulada de AAL vigente cada año.
 
 **`generate_reduced_catalogue(base_lec_curve, red, N_events, U_times, U_loss, catalogue_length, simulation_number)`**
-Genera el catálogo reducido reutilizando los streams CRN del catálogo base para garantizar comparabilidad. `red` es una lista de reducción acumulada de AAL por año ($MM), definida directamente por el usuario.
+Calibra por bisección el desplazamiento de la curva LEC para cada valor de reducción y regenera el catálogo reutilizando los streams CRN del catálogo base, de modo que las diferencias se deban únicamente a la reducción del riesgo.
+
+## cba/ (análisis costo-beneficio)
+
+**`cba.engine.run_cba(losses_df, payout_dfs, drm_configs, cba_config, resp_fiscal, gap_thresholds, loss_basis)`**
+Calcula, por simulación, los costos de cada instrumento (prima anual del seguro; comisiones y servicio de deuda a valor presente completo al desembolso para PPO, CCF y DDO), los beneficios (pagos × (1 + factor de beneficio indirecto)) y la pérdida no pagada, y los descuenta a la tasa social. Devuelve un objeto `CBAResults` con:
+
+| Grupo | Indicadores |
+| --- | --- |
+| Centrales (`core`) | B/C esperado y su distribución, P(B/C > 1), pérdida no pagada esperada (VP) y sus percentiles, B/UL (complementariedad), B/C por instrumento |
+| Eficiencia (`efficiency`) | Cost Multiple, Money Value y OMV por instrumento y agregados |
+| CNC (`cnc`) | Ahorro neto esperado y mediano de la estrategia ex-ante frente a deuda comercial ex-post con spread endógeno por severidad del evento (% del PIB) |
+| DRR (`drr`) | VP de la inversión, beneficio directo (reducción de pérdidas) e indirecto (reducción de la brecha), B/C directo e indirecto. Se calcula cuando DRR y CBA están activos |
+
+La base de pérdidas del CBA (`cba.loss_basis`) puede ser la pérdida económica total o la pérdida fiscal (total × `resp_fiscal`). Los parámetros de costo por defecto de cada tipo de instrumento se definen en `[cba.defaults.*]` y pueden sobreescribirse instrumento por instrumento en su bloque `[[strategy.instruments]]`. Los parámetros del CNC (`[cba.cnc]`) están calibrados para Honduras y deben recalibrarse para otro país.
 
 ---
 
@@ -195,6 +208,8 @@ El motor y la metodología de cálculo del LEC Tool es desarrollado por el **Dis
 
 Equipo de desarrolladores:
 Andrés Abarca, Kenneth Otárola, Ginés Suárez
+
+Módulo de análisis costo-beneficio: consultoría externa (v6, 2026).
 
 ---
 
