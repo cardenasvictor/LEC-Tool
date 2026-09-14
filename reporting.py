@@ -243,8 +243,9 @@ def build_main_report(ctx):
         L.append(f"  Expected B/UL ratio:           {bul}")
         cnc = getattr(cba['results'], 'cnc', None)
         if cnc is not None:
-            L.append(f"  CNC expected saving:           {cnc.expected_pct_saving:.1%} "
-                     f"(P(ex-ante cheaper) = {cnc.prob_positive_saving:.1%})")
+            L.append(f"  CNC expected net saving (PV):  {_money(cnc.expected_net_saving)} "
+                     f"(median % saving {cnc.median_pct_saving:.1%}, "
+                     f"P(ex-ante cheaper) = {cnc.prob_positive_saving:.1%})")
         d = getattr(cba['results'], 'drr', None)
         if d is not None:
             L.append(f"  DRR B/C direct / indirect:     {d.bc_direct:.3f} / {d.bc_indirect:.3f}")

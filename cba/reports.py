@@ -22,6 +22,9 @@ def _format_config_summary(results) -> str:
         "=" * 60,
         f"Analysis horizon: {results.losses_matrix.shape[1]} years",
         f"Simulations: {results.losses_matrix.shape[0]}",
+        f"Loss basis: {getattr(results, 'loss_basis', 'total')} losses"
+        + (f" (fiscal share {results.resp_fiscal:.0%} applied)"
+           if getattr(results, 'loss_basis', 'total') == 'fiscal' else ""),
         f"Discount rate: {cfg.discount.social_discount_rate:.1%}",
         f"Indirect benefit factor: {cfg.indirect_benefit.factor:.1%}",
         f"OMV lambda: {cfg.omv.lambda_risk_adjustment}",
@@ -123,9 +126,9 @@ def generate_text_report(results) -> str:
     for k, v in c.bc_percentiles.items():
         lines.append(f"    {k}: {v:.3f}")
     lines.append("")
-    lines.append("  Financing Gap Probabilities:")
-    for thr, p in c.prob_gap_gt_threshold.items():
-        lines.append(f"    P(Gap > ${thr:,.0f}M): {p:.1%}")
+    lines.append("  Unpaid Loss Distribution (PV):")
+    for k, v in c.ul_percentiles.items():
+        lines.append(f"    {k}: ${v:,.1f}M")
     lines.append("")
     lines.append("  B/C Ratio by Instrument:")
     for name, ratios in c.bc_ratios_by_instrument.items():
@@ -173,9 +176,9 @@ def generate_text_report(results) -> str:
         lines.append("  of prevention avoids, independent of the financial")
         lines.append("  strategy. The indirect B/C measures how much of")
         lines.append("  the financing gap (unpaid loss) is reduced per")
-        lines.append("  dollar invested. Both are computed on the original")
-        lines.append("  instrument payouts — instruments are not re-evaluated")
-        lines.append("  on the reduced catalog.")
+        lines.append("  dollar invested. The reduced-catalogue figures come")
+        lines.append("  from re-evaluating the same instruments on the reduced")
+        lines.append("  catalogue (same random draws, shifted LEC).")
         lines.append("")
 
     # --- CNC (Comparative Net Cost) — optional, modular ---
@@ -188,6 +191,7 @@ def generate_text_report(results) -> str:
         lines.append(f"  Median net saving (PV):     ${cnc.median_net_saving:,.1f}M")
         lines.append(f"  P10 / P90 net saving (PV):  ${cnc.p10_net_saving:,.1f}M / ${cnc.p90_net_saving:,.1f}M")
         lines.append(f"  Expected % saving:          {cnc.expected_pct_saving:.1%}")
+        lines.append(f"  Median % saving:            {cnc.median_pct_saving:.1%}")
         lines.append(f"  P(ex-ante strategy cheaper):{cnc.prob_positive_saving:>7.1%}")
         if cnc.n_overcoverage_cells > 0:
             if cnc.max_overcoverage_ratio == float('inf'):
@@ -233,15 +237,12 @@ def generate_text_report(results) -> str:
     return "\n".join(lines)
 
 
-def generate_plots(results, output_dir: str = "."):
-    """Generate matplotlib visualizations."""
-    try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("matplotlib not available. Skipping plot generation.")
-        return
+def generate_plots(results):
+    """
+    Build the CBA results figure and return it (the caller saves or shows it;
+    main.py stores it as <run_id>_09_cba_results.png).
+    """
+    import matplotlib.pyplot as plt
 
     has_drr = getattr(results, 'drr', None) is not None
     ncols = 3
@@ -283,7 +284,7 @@ def generate_plots(results, output_dir: str = "."):
             inst_data.append(capped)
             inst_labels.append(name)
     if inst_data:
-        bp = ax.boxplot(inst_data, labels=inst_labels, patch_artist=True)
+        bp = ax.boxplot(inst_data, tick_labels=inst_labels, patch_artist=True)
         for patch, color in zip(bp['boxes'], colors):
             patch.set_facecolor(color)
             patch.set_alpha(0.7)
@@ -329,18 +330,16 @@ def generate_plots(results, output_dir: str = "."):
         ax.set_title(f'Sensitivity Tornado (Base B/C = {base:.3f})')
         ax.legend(fontsize=8)
     else:
-        ax.text(0.5, 0.5, 'No sensitivity data', ha='center', va='center',
-                transform=ax.transAxes)
+        ax.axis('off')   # sensitivity analysis not run
 
-    # 6. Gap probabilities
+    # 6. Unpaid loss percentiles (PV)
     ax = axes[1, 2]
-    if results.core.prob_gap_gt_threshold:
-        thrs = sorted(results.core.prob_gap_gt_threshold.keys())
-        probs = [results.core.prob_gap_gt_threshold[t] for t in thrs]
-        ax.bar([f"${t:,.0f}M" for t in thrs], probs, color='coral', alpha=0.7)
-        ax.set_title('P(Gap > Threshold)')
-        ax.set_ylabel('Probability')
-        ax.set_ylim(0, 1)
+    if results.core.ul_percentiles:
+        labels = list(results.core.ul_percentiles.keys())
+        values = [results.core.ul_percentiles[k] for k in labels]
+        ax.bar(labels, values, color='coral', alpha=0.7)
+        ax.set_title('Unpaid Loss Percentiles (PV)')
+        ax.set_ylabel('M USD')
 
     # DRR (if available)
     if has_drr:
@@ -367,9 +366,5 @@ def generate_plots(results, output_dir: str = "."):
         # 9. empty
         axes[2, 2].axis('off')
 
-    plt.tight_layout()
-    filepath = f"{output_dir}/lec_cba_results.png"
-    plt.savefig(filepath, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"Plots saved to {filepath}")
-    return filepath
+    fig.tight_layout()
+    return fig

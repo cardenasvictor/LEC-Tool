@@ -132,32 +132,66 @@ def run_risk_reduction(cfg, lec, sim, inputs):
     }
 
 
-def run_cba_stage(cfg, sim, strat, drr, out_dir):
+def run_cba_stage(cfg, sim, strat, drr, thresholds, out_dir):
+    """
+    Cost-benefit analysis on the base catalogue. When the ex-ante risk
+    reduction ran, the CBA is repeated on the reduced catalogue (same
+    instruments re-evaluated there) and the DRR cost-effectiveness
+    indicators are attached to the results.
+    """
     from cba.engine import run_cba
     from cba.reports import generate_text_report
 
     cba_config = build_cba_config(cfg)
     scale = cfg.fiscal.resp_fiscal if cfg.cba.loss_basis == 'fiscal' else 1.0
+    common = dict(
+        drm_configs=strat['drm_configs'],
+        cba_config=cba_config,
+        resp_fiscal=cfg.fiscal.resp_fiscal,
+        gap_thresholds=[thr for _, thr in thresholds],
+        loss_basis=cfg.cba.loss_basis,
+    )
 
     results = run_cba(
         losses_df=sim['synthetic_annual_df'] * scale,
         payout_dfs=strat['payout_dfs'],
-        drm_configs=strat['drm_configs'],
-        cba_config=cba_config,
-        resp_fiscal=cfg.fiscal.resp_fiscal,
+        **common,
     )
+
+    results_reduced = None
+    if drr is not None:
+        from cba.diagnostics import compute_drr_analysis
+        from cba.discounting import present_value_matrix
+
+        results_reduced = run_cba(
+            losses_df=drr['synthetic_annual_red_df'] * scale,
+            payout_dfs=drr['payout_red_dfs'],
+            **common,
+        )
+        results.drr = compute_drr_analysis(
+            losses_pv_original=present_value_matrix(results.losses_matrix, cba_config.discount),
+            losses_pv_reduced=present_value_matrix(results_reduced.losses_matrix, cba_config.discount),
+            unpaid_pv_original=results.core.unpaid_losses_pv,
+            unpaid_pv_reduced=results_reduced.core.unpaid_losses_pv,
+            inv_vector=cfg.risk_reduction.investment,
+            discount_rate=cfg.cba.social_discount_rate,
+            cumulative_reduction=drr['reduction'],
+        )
+
     report = generate_text_report(results)
     report_file = out_dir / f'{cfg.run.id}_cba_report.txt'
     report_file.write_text(report, encoding='utf-8')
-    _log(f"cost-benefit analysis completed: E[B/C] = {results.core.expected_bc:.3f}")
-    return {'results': results, 'report': report, 'report_file': report_file, 'config': cba_config}
+    _log(f"cost-benefit analysis completed: E[B/C] = {results.core.expected_bc:.3f}"
+         + (f", DRR B/C direct = {results.drr.bc_direct:.3f}" if results.drr is not None else ""))
+    return {'results': results, 'results_reduced': results_reduced, 'report': report,
+            'report_file': report_file, 'config': cba_config}
 
 
 # =============================================================================
 # Outputs
 # =============================================================================
 
-def write_outputs(cfg, inputs, lec, sim, strat, drr, cba, out_dir):
+def write_outputs(cfg, inputs, lec, sim, strat, drr, cba, thresholds, out_dir):
     import plots  # imported here so run() can select the backend first
 
     run_id = cfg.run.id
@@ -195,12 +229,15 @@ def write_outputs(cfg, inputs, lec, sim, strat, drr, cba, out_dir):
 
     save(plots.plot_horizon_loss_distribution(sim['synthetic_annual_df'], horizon), 8, 'horizon_loss_distribution')
 
+    if cba is not None:
+        from cba.reports import generate_plots
+        save(generate_plots(cba['results']), 9, 'cba_results')
+
     # --- Statistics and gap probabilities -----------------------------------
     resp = cfg.fiscal.resp_fiscal
     base_label = f'{run_id} - Base catalogue'
     scenarios = [('Base catalogue', reporting.strategy_statistics(
         base_label, sim['synthetic_annual_df'], strat['total_coverage'], resp, horizon))]
-    thresholds = reporting.gap_thresholds(lec['max_loss'], cfg.lec.gap_threshold_fractions)
     gaps = [('Base catalogue', reporting.gap_probabilities(
         sim['synthetic_annual_df'], strat['total_coverage'], thresholds))]
     if drr is not None:
@@ -265,14 +302,19 @@ def run(config_path=None):
     sim = simulate(cfg, lec)
     strat = evaluate_strategy(cfg, sim, inputs)
     drr = run_risk_reduction(cfg, lec, sim, inputs) if cfg.risk_reduction.enabled else None
+
+    # Financing-gap thresholds: fractions of the maximum loss on the LEC curve,
+    # shared by the main report and the CBA.
+    thresholds = reporting.gap_thresholds(lec['max_loss'], cfg.lec.gap_threshold_fractions)
+
     cba = None
     if cfg.cba.enabled:
         if cfg.has_instruments:
-            cba = run_cba_stage(cfg, sim, strat, drr, out_dir)
+            cba = run_cba_stage(cfg, sim, strat, drr, thresholds, out_dir)
         else:
             _log('cost-benefit analysis skipped: no instruments declared')
 
-    report, files = write_outputs(cfg, inputs, lec, sim, strat, drr, cba, out_dir)
+    report, files = write_outputs(cfg, inputs, lec, sim, strat, drr, cba, thresholds, out_dir)
     print('\n' + report)
     if cba is not None:
         print('\n' + cba['report'])

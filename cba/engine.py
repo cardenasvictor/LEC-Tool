@@ -50,6 +50,8 @@ class CBAResults:
     instrument_types: Dict[str, str] = field(default_factory=dict)
     # fiscal responsibility share passed from main.py (for reporting only)
     resp_fiscal: float = 1.0
+    # 'total' or 'fiscal': what losses_df contained (set by the caller)
+    loss_basis: str = 'total'
 
     # Optional fields (not computed by run_cba, available for downstream use)
     drr: Optional[object] = None
@@ -183,6 +185,8 @@ def run_cba(
     drm_configs: list,
     cba_config: LECCBAConfig,
     resp_fiscal: float = 1.0,
+    gap_thresholds: Optional[List[float]] = None,
+    loss_basis: str = 'total',
 ) -> CBAResults:
     """
     Run cost-benefit analysis on outputs from risk_management.apply_strategy.
@@ -201,21 +205,29 @@ def run_cba(
         CBA configuration parameters.
     resp_fiscal : float, default 1.0
         Fiscal responsibility share from main.py, stored for reporting only.
+    gap_thresholds : list of float, optional
+        Absolute thresholds ($MM) for P(unpaid loss PV > threshold). main.py
+        passes the same thresholds used by the main report (fractions of the
+        maximum LEC loss); the default falls back to cba.core.
+    loss_basis : {'total', 'fiscal'}
+        Whether losses_df holds total economic losses or losses already
+        multiplied by resp_fiscal. Stored for reporting only; the caller
+        applies the scaling.
 
     Returns
     -------
     CBAResults
     """
-    # TODO: clarify whether losses_df contains total economic losses or fiscal losses.
-    # If total losses, multiply by cba_config.government_exposure.factor here:
-    #   losses_matrix = losses_df.values.astype(float) * cba_config.government_exposure.factor
-    # Currently using losses as-is pending team confirmation.
+    # losses_df is used as-is. The choice between total and fiscal losses is
+    # made by the caller through config.toml ([cba] loss_basis) and recorded
+    # here for the report.
     losses_matrix = losses_df.values.astype(float)
     num_sims, horizon = losses_matrix.shape
 
     results = CBAResults(config=cba_config)
     results.losses_matrix = losses_matrix
     results.resp_fiscal = resp_fiscal
+    results.loss_basis = loss_basis
 
     # Initialize output matrices
     results.total_costs_matrix = np.zeros((num_sims, horizon))
@@ -316,6 +328,7 @@ def run_cba(
         payouts_pv=payouts_pv,
         benefits_by_instrument_pv=benefits_by_inst_pv,
         costs_by_instrument_pv=costs_by_inst_pv,
+        gap_thresholds=gap_thresholds,
     )
 
     results.efficiency = compute_efficiency_indicators(
