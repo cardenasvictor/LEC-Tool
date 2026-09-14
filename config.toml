@@ -9,9 +9,9 @@
 # =============================================================================
 
 [run]
-id           = "Estrategia 3"   # run identifier: prefix of every output file and name of the outputs/<id>/ folder
+id           = "HND_Test"   # run identifier: prefix of every output file and name of the outputs/<id>/ folder
 output_dir   = "outputs"        # root folder for results (a sub-folder named after the id is created inside)
-show_figures = false            # true: also open figure windows (the run pauses until they are closed)
+show_figures = true            # true: also open figure windows (the run pauses until they are closed)
 figure_dpi   = 130              # resolution of the saved PNG figures
 
 [inputs]
@@ -25,7 +25,7 @@ freq_scale_factor       = 1.0    # multiplies every exceedance rate
 hybrid_curve            = true   # blend the empirical LEC with the probabilistic tail
 bootstrap_samples       = 1000   # bootstrap resamples for the LEC confidence band
 pml_return_periods      = [200]  # return periods (years) for which the PML is reported
-gap_threshold_fractions = [0.25, 0.50, 0.75, 1.00]   # financing-gap thresholds as fractions of the maximum loss on the LEC curve
+gap_threshold_fractions = [0.25, 0.50, 0.75, 0.90]   # financing-gap thresholds as fractions of the maximum loss on the LEC curve
 
 [simulation]
 catalogue_length    = 10     # years per synthetic catalogue (simulation horizon)
