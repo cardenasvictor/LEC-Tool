@@ -382,7 +382,13 @@ def apply_strategy(event_catalogue, drm_configs, catalogue_length):
         for j in range(n_instruments)
     ]
 
-    total_coverage = sum(payout_dfs)
+    if payout_dfs:
+        total_coverage = sum(payout_dfs)
+    else:
+        # No instruments: coverage is identically zero (sum([]) would be the int 0).
+        total_coverage = pd.DataFrame(
+            np.zeros((simulation_number, catalogue_length)), columns=column_names
+        )
 
     return {
         'payout_dfs': payout_dfs,

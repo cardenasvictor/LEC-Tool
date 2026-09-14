@@ -1,423 +1,291 @@
 # -*- coding: utf-8 -*-
 """
-main.py — LEC Tool Demo Script
-================================
-Complete end-to-end demonstration of the LEC Tool workflow.
+main.py — LEC Tool
+===================
+Single entry point of the LEC Tool. Edit ``config.toml`` and run::
 
-This script is the integration reference for the online version. It reads input
-data from the data/ folder, defines all parameters, calls the four core
-modules in order, and produces all diagnostic plots.
+    python main.py
 
-Flow
-----
-1.  Parameters & data loading
-2.  Empirical LEC (with optional hybrid tail)
-3.  Synthetic catalogue generation (CRN)
-4.  DRM strategy evaluation (Estrategia 1: CCRIF + PPO + CCF + DDO)
-5.  Ex-ante risk reduction + DRM on reduced catalogue
+Every input comes from the configuration file; every result is written to
+``<output_dir>/<run id>/`` with the run id as file-name prefix:
 
-Input files (data/)
--------------------
-LEC_event_loss_example.csv  columns: year (int), econ_loss (float $MM)
-ppo_example.csv             single headerless row: 10 PPO amounts ($MM)
-tail_curve.csv              columns: tail_loss (float $MM), tail_aep (float)
+    <id>_01..08_*.png       figures (see plots.py for the numbering)
+    <id>_09_cba_results.png CBA figure (when the CBA is enabled)
+    <id>_report.txt         main results report
+    <id>_statistics.csv     strategy statistics per scenario
+    <id>_cba_report.txt     cost-benefit report (when the CBA is enabled)
+    <id>_config_used.toml   copy of the configuration that produced the run
+
+Pipeline
+--------
+1. load_inputs         read the CSV inputs
+2. compute_lec         empirical LEC + bootstrap band, optional hybrid tail
+3. simulate            synthetic catalogues (compound Poisson, CRN streams)
+4. evaluate_strategy   instrument payouts on the base catalogue
+5. run_risk_reduction  ex-ante DRR: reduced LEC, reduced catalogue, payouts   [risk_reduction.enabled]
+6. run_cba_stage       cost-benefit analysis                                 [cba.enabled]
+7. write_outputs       figures, report, CSV
+
+Stages 5 and 6 only run when enabled in config.toml. A strategy without a PPO
+never reads the PPO schedule file.
 """
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
-from datetime import datetime
+import shutil
+import sys
 
+import numpy as np
+
+from config_loader import (
+    load_config, load_input_data, build_drm_configs, build_cba_config, ConfigError,
+)
 from lec_core import compute_empirical_lec, build_hybrid_lec
 from simulation import generate_synthetic_catalogue
 from risk_management import apply_strategy
 from risk_reduction import compute_reduction_schedule, generate_reduced_catalogue
+import reporting
+
+
+def _log(msg):
+    print(f'[LEC Tool] {msg}', flush=True)
+
 
 # =============================================================================
-# 1. PARAMETERS
+# Stages
 # =============================================================================
 
-DATA_DIR = Path(__file__).parent / 'data'
+def load_inputs(cfg):
+    inputs = load_input_data(cfg)
+    inputs['drm_configs'] = build_drm_configs(cfg, inputs['ppo_schedule'])
+    _log(f"inputs loaded: {len(inputs['event_loss_df'])} historical events, "
+         f"{len(inputs['drm_configs'])} instrument(s)"
+         + (", PPO schedule read" if cfg.has_ppo else ""))
+    return inputs
 
-# --- Global ---
-resp_fiscal       = 0.60   # fiscal responsibility share (0–1)
-loss_scale_factor = 1.0    # multiplicative scale on all losses
-freq_scale_factor = 1.0    # multiplicative scale on all exceedance rates
-curva_hibrida     = True   # blend empirical LEC with probabilistic tail
 
-# --- Simulation ---
-catalogue_length  = 10     # years per synthetic catalogue
-simulation_number = 1000   # number of independent catalogues (1–1000)
-random_seed       = 99     # for reproducibility, set to None for random number generation
-
-# --- Visualization ---
-catalogo_visualizado = 860  # which catalogue to display in per-catalogue plots (0-(simulation_number-1))
-
-# --- DRM strategy: Estrategia 1 (CCRIF + PPO + CCF) ---
-# PPO schedule is loaded from file; placeholder here, overwritten below.
-drm_configs = [
-    {
-        'name': 'CCRIF',
-        'type': 'insurance',
-        'attachment_point': 50,       # $MM
-        'exhaustion_point': 190,      # $MM
-        'ceding_percentage': 0.066,
-    },
-    {
-        'name': 'BID PPO',
-        'type': 'ppo',
-        'ppo_schedule': None,         # set from ppo_example.csv (length must == catalogue_length)
-    },
-    {
-        'name': 'BID CCF',
-        'type': 'ccf',
-        'ccf_maximum': 300,           # $MM total facility
-        'ccf_person': 1650,           # $ per affected person
-        'Pop_exposed': 10.83e6,       # exposed population
-    },
-    {
-        'name': 'BID DDO $40MM',
-        'type': 'ddo',
-        'ddo_threshold': 120,         # $MM — trigger loss level
-        'ddo_available': 80,          # $MM — fixed payout when triggered
-    },
-    {
-        'name': 'WB DDO',
-        'type': 'ddo',
-        'ddo_threshold': 120,         # $MM — trigger loss level
-        'ddo_available': 110,          # $MM — fixed payout when triggered
-    },
-]
-
-id_estrategia = 'Estrategia 3'
-
-# --- Ex-ante reduction ---
-year_ini      = datetime.now().year + 1   # first year of the simulation horizon (for axis labels only)
-discount_rate = 0.12                      # annual discount rate for investment cost-benefit
-inv = [ 4,  0,  8,  0,  16,  0,  8,  0, 4,  0]   # $MM invested per year
-rbc = [ 4,  4,  4,  4,  4,  4,  4,  4,  4,  4]  # benefit-to-cost ratio
-hor = [20, 20, 20, 20, 20, 20, 20, 20, 20, 20]  # benefit horizon (years)
-
-for name, arr in {'inv': inv, 'rbc': rbc, 'hor': hor}.items():
-    if len(arr) != catalogue_length:
-        raise ValueError(f"'{name}' has length {len(arr)} but catalogue_length={catalogue_length}.")
-
-# =============================================================================
-# 2. INPUT DATA
-# =============================================================================
-
-event_loss_df = pd.read_csv(DATA_DIR / 'LEC_event_loss_example.csv')
-
-tail_curve_df = pd.read_csv(DATA_DIR / 'tail_curve_example.csv')
-tail_loss = loss_scale_factor * tail_curve_df['tail_loss'].to_numpy(dtype=float)
-tail_aep  = freq_scale_factor * tail_curve_df['tail_aep'].to_numpy(dtype=float)
-
-# ppo_example.csv is a single headerless row: catalogue_length comma-separated amounts
-ppo_schedule = pd.read_csv(DATA_DIR / 'ppo_example.csv', header=None).iloc[0].tolist()
-
-if len(ppo_schedule) != catalogue_length:
-    raise ValueError(
-        f"ppo_example.csv has {len(ppo_schedule)} values "
-        f"but catalogue_length={catalogue_length}."
+def compute_lec(cfg, inputs):
+    lec_result = compute_empirical_lec(
+        inputs['event_loss_df'],
+        loss_scale_factor=cfg.lec.loss_scale_factor,
+        freq_scale_factor=cfg.lec.freq_scale_factor,
+        B=cfg.lec.bootstrap_samples,
+        random_seed=cfg.simulation.random_seed,
     )
-
-drm_configs[1]['ppo_schedule'] = ppo_schedule  # wire loaded schedule into config
-
-# =============================================================================
-# 3. EMPIRICAL LEC
-# =============================================================================
-
-lec_result = compute_empirical_lec(
-    event_loss_df,
-    loss_scale_factor=loss_scale_factor,
-    freq_scale_factor=freq_scale_factor,
-    B=1000,
-    random_seed=random_seed,
-)
-
-empirical        = lec_result['empirical']
-lambda_empirical = lec_result['lambda_empirical']
-lec_mean         = lec_result['lec_mean']
-lec_p05          = lec_result['lec_p05']
-lec_p95          = lec_result['lec_p95']
-
-if curva_hibrida:
-    lec_curve, aal = build_hybrid_lec(
-        lec_result['lec_curve'], tail_loss, tail_aep
-    )
-else:
-    lec_curve = lec_result['lec_curve']
-    aal       = lec_result['aal']
-
-# --- Plot 1: LEC + bootstrap CI  |  Annual loss bar chart ---
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-
-axes[0].plot(empirical, lambda_empirical, 'k-',  linewidth=1.5, label='Empirical LEC')
-axes[0].plot(lec_mean,  lambda_empirical, 'b-', linewidth=2,   label='Mean Bootstrapped LEC')
-axes[0].fill_betweenx(lambda_empirical, lec_p05, lec_p95, color=[0.8, 0.8, 1], alpha=0.5, label='90% CI')
-if curva_hibrida:
-    axes[0].plot(lec_curve[:, 0], lec_curve[:, 1], 'r--', linewidth=1.5, label='Hybrid LEC')
-axes[0].set_xscale('log')
-axes[0].set_yscale('log')
-axes[0].grid(True, which='both')
-axes[0].set_xlabel('Economic Loss [$MM]')
-axes[0].set_ylabel('Annual Frequency of Exceedance')
-axes[0].set_title('Loss Exceedance Curve (LEC)')
-axes[0].text(0.05, 0.8, f'AAL = ${np.ceil(aal):,.0f} MM', transform=axes[0].transAxes, fontsize=10,
-             bbox=dict(facecolor='white', edgecolor='black', boxstyle='round'))
-axes[0].legend()
-
-yearly_loss = event_loss_df.groupby('year')['econ_loss'].sum().reset_index()
-axes[1].bar(yearly_loss['year'], yearly_loss['econ_loss'])
-axes[1].set_title('Economic Loss vs Year')
-axes[1].set_xlabel('Year')
-axes[1].set_ylabel('Economic Loss [$MM]')
-axes[1].grid(True)
-
-plt.tight_layout()
-plt.show()
-
-# =============================================================================
-# 4. SYNTHETIC CATALOGUE
-# =============================================================================
-
-sim_result = generate_synthetic_catalogue(
-    lec_curve, catalogue_length, simulation_number, random_seed
-)
-
-event_catalogue      = sim_result['event_catalogue']
-synthetic_annual_df  = sim_result['synthetic_annual_df']
-
-# --- Plot 2: Original LEC vs empirical LEC from simulated events ---
-LS          = lec_curve[:, 0]
-lambda_loss = lec_curve[:, 1]
-all_losses  = [l for cat in event_catalogue for l in cat['losses']]
-
-hist, _ = np.histogram(all_losses, bins=np.append(LS, np.inf))
-lambda_simulated = np.flip(np.cumsum(np.flip(hist))) / (catalogue_length * simulation_number)
-
-plt.figure()
-plt.plot(LS, lambda_loss, 'b-',  linewidth=2,   label='Original (Analytical)')
-plt.plot(LS, lambda_simulated, 'r--', linewidth=1.5, label='Empirical (Simulated)')
-plt.xscale('log')
-plt.yscale('log')
-plt.xlabel('Loss [$MM]')
-plt.ylabel('Annual Frequency of Exceedance')
-plt.title('LEC: Analytical vs Simulated')
-plt.legend(loc='lower left')
-plt.grid(True, which='both', ls='--')
-plt.ylim(bottom=lambda_loss.min())
-plt.tight_layout()
-plt.show()
-
-# --- Plot 3: Catalogue statistics (2 × 2 grid) ---
-fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-
-axes[0, 0].bar(np.arange(1, catalogue_length + 1),
-               synthetic_annual_df.loc[catalogo_visualizado].values)
-axes[0, 0].set_xlabel('Año')
-axes[0, 0].set_ylabel('Pérdidas económicas anuales simuladas ($MM)')
-axes[0, 0].set_title(f'Pérdidas anuales — catálogo {catalogo_visualizado}')
-
-axes[1, 0].hist(synthetic_annual_df.values.flatten(), bins=50)
-axes[1, 0].set_xlabel('Pérdidas económicas anuales simuladas ($MM)')
-axes[1, 0].set_ylabel('Frecuencia')
-axes[1, 0].set_title('Distribución pérdidas anuales (todos los catálogos)')
-
-data_cat = synthetic_annual_df.loc[catalogo_visualizado].values
-axes[0, 1].barh(['Desv. Estándar', 'Mediana', 'Máximo', 'Promedio'],
-                [np.std(data_cat), np.median(data_cat),
-                 np.max(data_cat), np.mean(data_cat)])
-axes[0, 1].set_xlabel('Pérdida económica anual ($MM)')
-axes[0, 1].set_title(f'Estadísticas — catálogo {catalogo_visualizado}')
-
-data_all = synthetic_annual_df.values.flatten()
-axes[1, 1].barh(['Desv. Estándar', 'Mediana', 'Máximo', 'Promedio'],
-                [np.std(data_all), np.median(data_all),
-                 np.max(data_all), np.mean(data_all)])
-axes[1, 1].set_xlabel('Pérdida económica anual ($MM)')
-axes[1, 1].set_title('Estadísticas — todos los catálogos')
-
-plt.tight_layout()
-plt.show()
-
-# =============================================================================
-# 5. DRM STRATEGY (base catalogue)
-# =============================================================================
-
-drm_result     = apply_strategy(event_catalogue, drm_configs, catalogue_length)
-payout_dfs     = drm_result['payout_dfs']     
-total_coverage = drm_result['total_coverage']
-year_labels    = np.arange(year_ini, year_ini + catalogue_length)
-
-# --- Plot 4: Stacked DRM payouts for selected catalogue ---
-loss_vals = synthetic_annual_df.loc[catalogo_visualizado].values
-p = [df.loc[catalogo_visualizado].values for df in payout_dfs]
-
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.bar(year_labels, loss_vals, label='Pérdidas totales')
-bottom = np.zeros(catalogue_length)
-for cfg, payout in zip(drm_configs, p):
-    ax.bar(year_labels, payout, bottom=bottom, label=cfg['name'], hatch = '//')
-    bottom += payout
-for x, v in zip(year_labels, loss_vals):
-    if v > 0:
-        ax.text(x, v, f'${v:.1f}MM', ha='center', va='bottom', fontsize=9)
-Lim_axis = loss_vals.max() + 50
-ax.set_ylim(0, Lim_axis)
-ax.set_xticks(year_labels)
-ax.set_xticklabels(year_labels)
-ax.set_xlabel('Año')
-ax.set_ylabel('Pérdidas económicas anuales simuladas ($MM)')
-ax.set_title(f'Evaluación de {id_estrategia} — catálogo {catalogo_visualizado}')
-ax.legend()
-plt.tight_layout()
-plt.show()
-
-# --- Statistics: base catalogue + strategy ---
-print(f'\n=== {id_estrategia} — Catálogo base ===')
-print(f'Total {catalogue_length}-year loss median:            '
-      f'${np.round(synthetic_annual_df.sum(axis=1).median(), 1)} MM')
-print(f'Total {catalogue_length}-year coverage median:        '
-      f'${np.round(total_coverage.sum(axis=1).median(), 1)} MM')
-print(f'Total {catalogue_length}-year retention median:       '
-      f'${np.round(synthetic_annual_df[total_coverage == 0].sum(axis=1).median(), 1)} MM')
-print(f'Total {catalogue_length}-year uncovered median:       '
-      f'${np.round((synthetic_annual_df[total_coverage != 0].sum(axis=1) - total_coverage.sum(axis=1)).median(), 1)} MM')
-print(f'Total {catalogue_length}-year FISCAL retention median:'
-      f' ${np.round(resp_fiscal * synthetic_annual_df[total_coverage == 0].sum(axis=1).median(), 1)} MM')
-print(f'Total {catalogue_length}-year FISCAL uncovered median:'
-      f' ${np.round(resp_fiscal * (synthetic_annual_df[total_coverage != 0].sum(axis=1) - total_coverage.sum(axis=1)).median(), 1)} MM')
-
-# =============================================================================
-# 6. RISK REDUCTION Mechanism
-# =============================================================================
-
-red = compute_reduction_schedule(inv, rbc, hor, discount_rate)
-
-# --- Plot: DRR Investment per year ---
-fig, ax = plt.subplots(figsize=(8, 5))
-ax.bar(year_labels, inv, color='#1B5E79', label='DRR Investment')
-for x, v in zip(year_labels, inv):
-    label = f'${v:.1f}MM' if v > 0 else '$-'
-    ax.text(x, v, label, ha='center', va='bottom', fontsize=9)
-ax.yaxis.set_major_formatter(
-    plt.FuncFormatter(lambda val, _: f'${val:.1f}MM' if val > 0 else '$-'))
-ax.set_xticks(year_labels)
-ax.set_xticklabels(year_labels)
-ax.set_title('DRR Investment')
-ax.legend()
-plt.tight_layout()
-plt.show()
-
-reduced_result = generate_reduced_catalogue(
-    lec_curve, red,
-    sim_result['N_events'], sim_result['U_times'], sim_result['U_loss'],
-    catalogue_length, simulation_number,
-)
-
-synthetic_annual_red_df = reduced_result['synthetic_annual_red_df']
-event_catalogue_red     = reduced_result['event_catalogue_red']
-lec_curves_by_target    = reduced_result['lec_curves_by_target']
-
-# --- Plot 5: Family of reduced LEC curves ---
-plt.figure()
-ypos = 0.85
-sorted_targets = sorted(lec_curves_by_target.keys())
-for C_target in sorted_targets:
-    data = lec_curves_by_target[C_target]
-    plt.semilogx(data['Loss'], data['Lambda'], label=f'C_target={C_target:.1f}')
-    plt.text(0.05, ypos,
-             f'C={C_target:.1f}: AAL = ${data["aal"]:,.2f} MM',
-             transform=plt.gca().transAxes, fontsize=9,
-             bbox=dict(facecolor='white', edgecolor='black', boxstyle='round'))
-    ypos -= 0.08
-plt.xlabel('Loss [$MM]')
-plt.ylabel('Annual Frequency of Exceedance')
-plt.title('Curvas LEC reducidas (ex-ante)')
-plt.legend(fontsize=8)
-plt.grid(True)
-plt.tight_layout()
-plt.show()
-
-# --- DRM on reduced catalogue ---
-drm_red_result     = apply_strategy(event_catalogue_red, drm_configs, catalogue_length)
-payout_red_dfs     = drm_red_result['payout_dfs']
-total_coverage_red = drm_red_result['total_coverage']
-
-# --- Plot 6: Stacked DRM payouts for reduced catalogue ---
-loss_red_vals = synthetic_annual_red_df.loc[catalogo_visualizado].values
-pr = [df.loc[catalogo_visualizado].values for df in payout_red_dfs]
-
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.bar(year_labels, loss_red_vals, label='Pérdidas totales')
-bottom = np.zeros(catalogue_length)
-for cfg, payout in zip(drm_configs, pr):
-    ax.bar(year_labels, payout, bottom=bottom, label=cfg['name'], hatch = '//')
-    bottom += payout
-for x, v in zip(year_labels, loss_red_vals):
-    if v > 0:
-        ax.text(x, v, f'${v:.1f}MM', ha='center', va='bottom', fontsize=8)
-ax.set_ylim(0, Lim_axis)
-ax.set_xticks(year_labels)
-ax.set_xticklabels(year_labels)
-ax.set_xlabel('Año')
-ax.set_ylabel('Pérdidas económicas anuales simuladas ($MM)')
-ax.set_title(f'Evaluación de {id_estrategia} — catálogo reducido {catalogo_visualizado}')
-ax.legend()
-plt.tight_layout()
-plt.show()
-
-# --- Statistics: reduced catalogue + strategy ---
-print(f'\n=== {id_estrategia} — Catálogo reducido (ex-ante) ===')
-print(f'Total {catalogue_length}-year loss median:            '
-      f'${np.round(synthetic_annual_red_df.sum(axis=1).median(), 1)} MM')
-print(f'Total {catalogue_length}-year coverage median:        '
-      f'${np.round(total_coverage_red.sum(axis=1).median(), 1)} MM')
-print(f'Total {catalogue_length}-year retention median:       '
-      f'${np.round(synthetic_annual_red_df[total_coverage_red == 0].sum(axis=1).median(), 1)} MM')
-print(f'Total {catalogue_length}-year uncovered median:       '
-      f'${np.round((synthetic_annual_red_df[total_coverage_red != 0].sum(axis=1) - total_coverage_red.sum(axis=1)).median(), 1)} MM')
-print(f'Total {catalogue_length}-year FISCAL retention median:'
-      f' ${np.round(resp_fiscal * synthetic_annual_red_df[total_coverage_red == 0].sum(axis=1).median(), 1)} MM')
-print(f'Total {catalogue_length}-year FISCAL uncovered median:'
-      f' ${np.round(resp_fiscal * (synthetic_annual_red_df[total_coverage_red != 0].sum(axis=1) - total_coverage_red.sum(axis=1)).median(), 1)} MM')
-
-drr_roi = ((synthetic_annual_df-synthetic_annual_red_df).cumsum(axis=1)<np.array(inv).sum()).sum(axis=1).median()
-print(f'\nDRR Investment total: ${np.array(inv).sum():.1f} MM')
-print(f'Median years until DRR investment is "paid back" by reduction in losses: {drr_roi} years (undiscounted)')
-
-# =============================================================================
-# 7. EXPORT STATISTICS TO CSV
-# =============================================================================
-
-def _stats_row(label, annual_df, coverage_df, fiscal_share):
-    loss_med      = np.round(annual_df.sum(axis=1).median(), 1)
-    cov_med       = np.round(coverage_df.sum(axis=1).median(), 1)
-    ret_med       = np.round(annual_df[coverage_df == 0].sum(axis=1).median(), 1)
-    uncov_med     = np.round(
-        (annual_df[coverage_df != 0].sum(axis=1) - coverage_df.sum(axis=1)).median(), 1)
-    f_ret_med     = np.round(fiscal_share * ret_med, 1)
-    f_uncov_med   = np.round(fiscal_share * uncov_med, 1)
+    if cfg.lec.hybrid_curve:
+        lec_curve, aal = build_hybrid_lec(lec_result['lec_curve'], inputs['tail_loss'], inputs['tail_aep'])
+    else:
+        lec_curve, aal = lec_result['lec_curve'], lec_result['aal']
+    _log(f"LEC computed: AAL = {aal:,.2f} $MM, maximum loss on curve = {lec_curve[:, 0].max():,.1f} $MM")
     return {
-        'Scenario': label,
-        f'Total {catalogue_length}-year loss median ($MM)':             loss_med,
-        f'Total {catalogue_length}-year coverage median ($MM)':         cov_med,
-        f'Total {catalogue_length}-year retention median ($MM)':        ret_med,
-        f'Total {catalogue_length}-year uncovered median ($MM)':        uncov_med,
-        f'Total {catalogue_length}-year FISCAL retention median ($MM)': f_ret_med,
-        f'Total {catalogue_length}-year FISCAL uncovered median ($MM)': f_uncov_med,
+        'lec_result': lec_result,
+        'lec_curve': lec_curve,
+        'aal': aal,
+        'aal_empirical': lec_result['aal'],
+        'max_loss': float(lec_curve[:, 0].max()),
+        'max_event_loss': lec_result['max_loss'],
+        'pml': reporting.pml_by_return_period(lec_curve, cfg.lec.pml_return_periods),
     }
 
-stats_rows = [
-    _stats_row(f'{id_estrategia} — Catálogo base',
-               synthetic_annual_df, total_coverage, resp_fiscal),
-    _stats_row(f'{id_estrategia} — Catálogo reducido (ex-ante)',
-               synthetic_annual_red_df, total_coverage_red, resp_fiscal),
-]
 
-stats_df = pd.DataFrame(stats_rows).set_index('Scenario').T
-csv_path = Path(__file__).parent / f'statistics_{id_estrategia}.csv'
-stats_df.to_csv(csv_path, encoding='utf-8-sig')
-print(f'\nStatistics exported to: {csv_path}')
+def simulate(cfg, lec):
+    sim = generate_synthetic_catalogue(
+        lec['lec_curve'], cfg.simulation.catalogue_length,
+        cfg.simulation.simulation_number, cfg.simulation.random_seed,
+    )
+    _log(f"synthetic catalogue generated: {cfg.simulation.simulation_number} x "
+         f"{cfg.simulation.catalogue_length} years")
+    return sim
+
+
+def evaluate_strategy(cfg, sim, inputs):
+    drm = apply_strategy(sim['event_catalogue'], inputs['drm_configs'], cfg.simulation.catalogue_length)
+    _log('strategy evaluated on the base catalogue')
+    return {
+        'drm_configs': inputs['drm_configs'],
+        'payout_dfs': drm['payout_dfs'],
+        'total_coverage': drm['total_coverage'],
+    }
+
+
+def run_risk_reduction(cfg, lec, sim, inputs):
+    rr = cfg.risk_reduction
+    red = compute_reduction_schedule(rr.investment, rr.benefit_cost_ratio, rr.benefit_horizon, rr.discount_rate)
+    reduced = generate_reduced_catalogue(
+        lec['lec_curve'], red,
+        sim['N_events'], sim['U_times'], sim['U_loss'],
+        cfg.simulation.catalogue_length, cfg.simulation.simulation_number,
+    )
+    drm_red = apply_strategy(reduced['event_catalogue_red'], inputs['drm_configs'],
+                             cfg.simulation.catalogue_length)
+    payback = reporting.drr_payback_years(sim['synthetic_annual_df'], reduced['synthetic_annual_red_df'],
+                                          rr.investment)
+    _log(f"ex-ante risk reduction evaluated: total investment {np.sum(rr.investment):,.1f} $MM, "
+         f"median payback {payback:.0f} years")
+    return {
+        'reduction': red,
+        'total_investment': float(np.sum(rr.investment)),
+        'synthetic_annual_red_df': reduced['synthetic_annual_red_df'],
+        'event_catalogue_red': reduced['event_catalogue_red'],
+        'lec_curves_by_target': reduced['lec_curves_by_target'],
+        'payout_red_dfs': drm_red['payout_dfs'],
+        'total_coverage_red': drm_red['total_coverage'],
+        'payback_years': payback,
+    }
+
+
+def run_cba_stage(cfg, sim, strat, drr, out_dir):
+    from cba.engine import run_cba
+    from cba.reports import generate_text_report
+
+    cba_config = build_cba_config(cfg)
+    scale = cfg.fiscal.resp_fiscal if cfg.cba.loss_basis == 'fiscal' else 1.0
+
+    results = run_cba(
+        losses_df=sim['synthetic_annual_df'] * scale,
+        payout_dfs=strat['payout_dfs'],
+        drm_configs=strat['drm_configs'],
+        cba_config=cba_config,
+        resp_fiscal=cfg.fiscal.resp_fiscal,
+    )
+    report = generate_text_report(results)
+    report_file = out_dir / f'{cfg.run.id}_cba_report.txt'
+    report_file.write_text(report, encoding='utf-8')
+    _log(f"cost-benefit analysis completed: E[B/C] = {results.core.expected_bc:.3f}")
+    return {'results': results, 'report': report, 'report_file': report_file, 'config': cba_config}
+
+
+# =============================================================================
+# Outputs
+# =============================================================================
+
+def write_outputs(cfg, inputs, lec, sim, strat, drr, cba, out_dir):
+    import plots  # imported here so run() can select the backend first
+
+    run_id = cfg.run.id
+    horizon = cfg.simulation.catalogue_length
+    shown = cfg.simulation.displayed_catalogue
+    year_labels = np.arange(cfg.simulation.first_year, cfg.simulation.first_year + horizon)
+    files = []
+
+    def save(fig, index, slug):
+        files.append(plots.save_figure(fig, out_dir, run_id, index, slug,
+                                       dpi=cfg.run.figure_dpi, keep_open=cfg.run.show_figures))
+
+    # --- Figures ------------------------------------------------------------
+    save(plots.plot_lec_curve(lec['lec_result'], lec['lec_curve'], lec['aal'],
+                              cfg.lec.hybrid_curve, inputs['event_loss_df']), 1, 'lec_curve')
+    save(plots.plot_lec_vs_simulated(lec['lec_curve'], sim['event_catalogue'], horizon,
+                                     cfg.simulation.simulation_number), 2, 'lec_analytical_vs_simulated')
+    save(plots.plot_catalogue_statistics(sim['synthetic_annual_df'], horizon, shown), 3, 'catalogue_statistics')
+
+    ylim = None
+    if cfg.has_instruments:
+        fig, ylim = plots.plot_strategy_payouts(
+            sim['synthetic_annual_df'], strat['payout_dfs'], strat['drm_configs'], year_labels, shown,
+            f'{run_id} - catalogue {shown}')
+        save(fig, 4, 'strategy_payouts_base')
+
+    if drr is not None:
+        save(plots.plot_drr_investment(year_labels, cfg.risk_reduction.investment), 5, 'drr_investment')
+        save(plots.plot_reduced_lec_curves(drr['lec_curves_by_target']), 6, 'reduced_lec_curves')
+        if cfg.has_instruments:
+            fig, _ = plots.plot_strategy_payouts(
+                drr['synthetic_annual_red_df'], drr['payout_red_dfs'], strat['drm_configs'], year_labels,
+                shown, f'{run_id} - reduced catalogue {shown}', ylim=ylim)
+            save(fig, 7, 'strategy_payouts_reduced')
+
+    save(plots.plot_horizon_loss_distribution(sim['synthetic_annual_df'], horizon), 8, 'horizon_loss_distribution')
+
+    # --- Statistics and gap probabilities -----------------------------------
+    resp = cfg.fiscal.resp_fiscal
+    base_label = f'{run_id} - Base catalogue'
+    scenarios = [('Base catalogue', reporting.strategy_statistics(
+        base_label, sim['synthetic_annual_df'], strat['total_coverage'], resp, horizon))]
+    thresholds = reporting.gap_thresholds(lec['max_loss'], cfg.lec.gap_threshold_fractions)
+    gaps = [('Base catalogue', reporting.gap_probabilities(
+        sim['synthetic_annual_df'], strat['total_coverage'], thresholds))]
+    if drr is not None:
+        red_label = f'{run_id} - Reduced catalogue (ex-ante)'
+        scenarios.append(('Reduced (ex-ante)', reporting.strategy_statistics(
+            red_label, drr['synthetic_annual_red_df'], drr['total_coverage_red'], resp, horizon)))
+        gaps.append(('Reduced (ex-ante)', reporting.gap_probabilities(
+            drr['synthetic_annual_red_df'], drr['total_coverage_red'], thresholds)))
+
+    stats_path = out_dir / f'{run_id}_statistics.csv'
+    reporting.statistics_table([s[1] for s in scenarios]).to_csv(stats_path, encoding='utf-8-sig')
+    files.append(stats_path)
+    if cba is not None:
+        files.append(cba['report_file'])
+
+    config_copy = out_dir / f'{run_id}_config_used.toml'
+    shutil.copyfile(cfg.source_path, config_copy)
+    files.append(config_copy)
+
+    # --- Main report --------------------------------------------------------
+    report_path = out_dir / f'{run_id}_report.txt'
+    files.append(report_path)
+    ctx = {
+        'cfg': cfg,
+        'n_events': len(inputs['event_loss_df']),
+        'year_min': int(inputs['event_loss_df']['year'].min()),
+        'year_max': int(inputs['event_loss_df']['year'].max()),
+        'lec': lec,
+        'instruments': strat['drm_configs'],
+        'scenarios': scenarios,
+        'thresholds': thresholds,
+        'gaps': gaps,
+        'drr': drr,
+        'year_labels': year_labels,
+        'horizon_stats': reporting.horizon_loss_statistics(sim['synthetic_annual_df']),
+        'cba': cba,
+        'files': [p.name for p in files],
+    }
+    report = reporting.build_main_report(ctx)
+    report_path.write_text(report, encoding='utf-8')
+    return report, files
+
+
+# =============================================================================
+# Entry point
+# =============================================================================
+
+def run(config_path=None):
+    """Run the complete pipeline for one configuration file. Returns the output folder."""
+    cfg = load_config(config_path)
+    out_dir = cfg.output_path
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _log(f"run '{cfg.run.id}' -> {out_dir}")
+
+    import matplotlib
+    if not cfg.run.show_figures:
+        matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    inputs = load_inputs(cfg)
+    lec = compute_lec(cfg, inputs)
+    sim = simulate(cfg, lec)
+    strat = evaluate_strategy(cfg, sim, inputs)
+    drr = run_risk_reduction(cfg, lec, sim, inputs) if cfg.risk_reduction.enabled else None
+    cba = None
+    if cfg.cba.enabled:
+        if cfg.has_instruments:
+            cba = run_cba_stage(cfg, sim, strat, drr, out_dir)
+        else:
+            _log('cost-benefit analysis skipped: no instruments declared')
+
+    report, files = write_outputs(cfg, inputs, lec, sim, strat, drr, cba, out_dir)
+    print('\n' + report)
+    if cba is not None:
+        print('\n' + cba['report'])
+    _log(f"{len(files)} files written to {out_dir}")
+
+    if cfg.run.show_figures:
+        plt.show()
+    return out_dir
+
+
+if __name__ == '__main__':
+    try:
+        run(sys.argv[1] if len(sys.argv) > 1 else None)
+    except ConfigError as exc:
+        print(f'\nConfiguration error: {exc}', file=sys.stderr)
+        sys.exit(2)

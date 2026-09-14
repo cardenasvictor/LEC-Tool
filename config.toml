@@ -1,0 +1,122 @@
+# =============================================================================
+# LEC Tool - run configuration
+# =============================================================================
+# This is the only file you need to edit. Run the tool with:   python main.py
+#
+# Units: monetary values in millions of US dollars ($MM); rates as decimals
+# (0.05 = 5 %). File paths are relative to the folder containing this file.
+# Full reference of every key: docs/CONFIG.md
+# =============================================================================
+
+[run]
+id           = "Estrategia 3"   # run identifier: prefix of every output file and name of the outputs/<id>/ folder
+output_dir   = "outputs"        # root folder for results (a sub-folder named after the id is created inside)
+show_figures = false            # true: also open figure windows (the run pauses until they are closed)
+figure_dpi   = 130              # resolution of the saved PNG figures
+
+[inputs]
+event_loss_file   = "data/LEC_event_loss_example.csv"   # columns: year (int), econ_loss ($MM)
+tail_curve_file   = "data/tail_curve_example.csv"       # columns: tail_loss ($MM), tail_aep; used only if lec.hybrid_curve = true
+ppo_schedule_file = "data/ppo_example.csv"              # one headerless row, one value per year; used only if a "ppo" instrument is declared
+
+[lec]
+loss_scale_factor       = 1.0    # multiplies every loss (historic catalogue and probabilistic tail)
+freq_scale_factor       = 1.0    # multiplies every exceedance rate
+hybrid_curve            = true   # blend the empirical LEC with the probabilistic tail
+bootstrap_samples       = 1000   # bootstrap resamples for the LEC confidence band
+pml_return_periods      = [200]  # return periods (years) for which the PML is reported
+gap_threshold_fractions = [0.25, 0.50, 0.75, 1.00]   # financing-gap thresholds as fractions of the maximum loss on the LEC curve
+
+[simulation]
+catalogue_length    = 10     # years per synthetic catalogue (simulation horizon)
+simulation_number   = 1000   # number of independent catalogues
+random_seed         = 99     # remove this line for a non-reproducible run
+displayed_catalogue = 860    # catalogue index (0 to simulation_number-1) shown in the per-catalogue figures
+# first_year        = 2027   # optional: calendar year of the first simulated year (axis labels only); default = next year
+
+[fiscal]
+resp_fiscal = 0.60   # share of losses that is a fiscal responsibility of the government (0-1)
+
+# -----------------------------------------------------------------------------
+# Financing strategy: one [[strategy.instruments]] block per instrument.
+# Supported types: "insurance", "ppo", "ccf", "ddo".
+# A "ppo" requires a "ccf" in the same strategy (the PPO triggers on CCF activation).
+# Delete or comment out a block to exclude the instrument.
+# Optional CBA cost parameters can be added to any block; they override the
+# [cba.defaults.<type>] values for that instrument only:
+#   insurance: rate_on_line
+#   ppo:       commitment_fee_rate, loan_interest_rate, repayment_years, front_end_fee_rate, credit_line
+#   ccf:       drawdown_fee_rate, loan_interest_rate, repayment_years, grace_period_years
+#   ddo:       loan_interest_rate, repayment_years
+# -----------------------------------------------------------------------------
+[[strategy.instruments]]
+name              = "CCRIF"
+type              = "insurance"
+attachment_point  = 50      # $MM, loss at which coverage begins
+exhaustion_point  = 190     # $MM, loss at which coverage is exhausted
+ceding_percentage = 0.066   # share of the layer that is covered (0-1)
+
+[[strategy.instruments]]
+name = "BID PPO"
+type = "ppo"   # the schedule of available amounts per year is read from inputs.ppo_schedule_file
+
+[[strategy.instruments]]
+name        = "BID CCF"
+type        = "ccf"
+ccf_maximum = 300       # $MM, total facility (cumulative cap over the horizon)
+ccf_person  = 1650      # $ per affected person
+Pop_exposed = 10.83e6   # exposed population
+
+[[strategy.instruments]]
+name          = "BID DDO $40MM"
+type          = "ddo"
+ddo_threshold = 120   # $MM, event loss that triggers the drawdown
+ddo_available = 80    # $MM, fixed payout per activation
+
+[[strategy.instruments]]
+name          = "WB DDO"
+type          = "ddo"
+ddo_threshold = 120
+ddo_available = 110
+
+[risk_reduction]
+enabled            = true   # false: skip the ex-ante risk-reduction (DRR) analysis entirely
+discount_rate      = 0.12   # annual discount rate used to annualise investment benefits
+investment         = [4, 0, 8, 0, 16, 0, 8, 0, 4, 0]            # $MM invested per year (one value per simulated year)
+benefit_cost_ratio = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4]             # benefit-to-cost ratio of each year's investment
+benefit_horizon    = [20, 20, 20, 20, 20, 20, 20, 20, 20, 20]   # years over which each investment yields benefits
+
+[cba]
+enabled                 = true      # false: skip the cost-benefit analysis
+loss_basis              = "total"   # "total": economic losses; "fiscal": losses x resp_fiscal
+social_discount_rate    = 0.05      # social discount rate for present values
+indirect_benefit_factor = 0.10      # indirect benefit multiplier applied to payouts
+omv_lambda              = 0.05      # risk-adjustment lambda of the Optimized Money Value
+legacy_truncation       = false     # true: legacy year-by-year debt service truncated at the horizon (validation only)
+
+[cba.defaults.insurance]
+rate_on_line = 0.05   # annual premium = rate_on_line x layer width x ceding_percentage
+
+[cba.defaults.ppo]
+commitment_fee_rate = 0.005    # annual fee on the undrawn balance
+loan_interest_rate  = 0.035    # contractual loan rate (not the social discount rate)
+repayment_years     = 5
+front_end_fee_rate  = 0.0025   # one-time fee on the credit line (year 1)
+
+[cba.defaults.ccf]
+drawdown_fee_rate  = 0.005   # one-time fee on each disbursement
+loan_interest_rate = 0.04
+repayment_years    = 25
+grace_period_years = 5       # interest-only years; must be smaller than repayment_years
+
+[cba.defaults.ddo]
+loan_interest_rate = 0.035
+repayment_years    = 5
+
+[cba.cnc]
+enabled               = true      # Comparative Net Cost: ex-ante instruments vs ex-post commercial debt
+gdp                   = 37094.0   # $MM, reference GDP of the country (default: Honduras 2024, World Bank)
+base_rate             = 0.035     # international base rate (SOFR)
+sovereign_base_spread = 0.05      # sovereign spread in ordinary conditions
+ex_post_term_years    = 10        # repayment term of the ex-post commercial debt
+spread_tiers          = [[0.02, 0.0], [0.05, 0.015], [inf, 0.05]]   # [upper event-loss/GDP threshold, additional spread]
