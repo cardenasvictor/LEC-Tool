@@ -1,6 +1,6 @@
 # LEC Tool v3: Cálculo de curvas de excedencia de pérdidas, evaluación de estrategias de gestión de riesgo y análisis costo-beneficio
 
-La herramienta **LEC Tool** consiste en una plataforma desarrollada por el **Banco Interamericano de Desarrollo** con el propósito de derivar curvas de excedencia de pérdidas (LEC) a partir de registros históricos de desastres. Esta plataforma está diseñada para estimar la tasa de excedencia anual asociada a valores específicos de pérdidas económicas. La curva LEC resultante se utiliza posteriormente en análisis de riesgo y en la toma de decisiones para la gestión de desastres, particularmente para la selección de estrategias de transferencia y/o reducción de riesgo, y para su evaluación costo-beneficio.
+La herramienta **LEC Tool** consiste en una plataforma desarrollada por el **Banco Interamericano de Desarrollo** con el propósito de derivar curvas de excedencia de pérdidas (LEC) a partir de registros históricos y resultados de análisis probabilistas de desastres. Esta plataforma está diseñada para estimar la tasa de excedencia anual asociada a valores específicos de pérdidas económicas. La curva LEC resultante se utiliza posteriormente en análisis de riesgo y en la toma de decisiones para la gestión de desastres, particularmente para la selección de estrategias de transferencia y/o reducción de riesgo, y para su evaluación costo-beneficio.
 
 ![version](https://img.shields.io/badge/version-3.0.0-blue)
 
@@ -12,12 +12,13 @@ El motor de cálculo del LEC Tool está implementado en un conjunto de módulos 
 
 ## Novedades de la versión 3
 
+- **Base de datos de pérdidas por país** (`Country databases`): una base de datos pre-procesada por el equipo DRM del BID que contiene datos históricos y probabilistas para la mayoría de los países de Latinoamérica y el Caribe.
 - **Archivo de configuración único** (`config.toml`): todos los parámetros de la corrida se definen ahí. No es necesario editar código.
 - **Un solo punto de entrada**: `python main.py` ejecuta el flujo completo.
 - **Módulo de análisis costo-beneficio** (`cba/`): indicadores B/C, brecha de financiamiento, eficiencia (CM, MV, OMV), Costo Neto Comparado (CNC) y costo-efectividad de la reducción de riesgo.
-- **Etapas opcionales**: la reducción ex-ante del riesgo (DRR) y el CBA se ejecutan solo si se activan en la configuración. Una estrategia sin PPO no requiere el archivo de calendario del PPO.
+- **Etapas opcionales**: la reducción ex-ante del riesgo (DRR) y el CBA se ejecutan solo si se activan en la configuración. Se mejoró el flujo de trabajo para que una estrategia sin PPO no requiera del archivo de calendario del PPO.
 - **Resultados persistentes**: todas las figuras, el reporte principal, el reporte CBA, las estadísticas y una copia de la configuración se guardan en `outputs/<id>/` con el identificador de la corrida como prefijo.
-- **Reporte principal** con resumen de la curva LEC, PML por periodo de retorno, estadísticas de la estrategia, probabilidades de brecha de financiamiento (umbrales al 25 %, 50 %, 75 % y 100 % de la pérdida máxima de la curva LEC), resumen de la DRR y del CBA.
+- **Reporte principal** con resumen de la curva LEC, PML por periodo de retorno, estadísticas de la estrategia, probabilidades de brecha de financiamiento (umbrales al 25 %, 50 %, 75 % y 90 % de la pérdida máxima de la curva LEC), resumen de la DRR y del CBA.
 
 ## Módulos
 
@@ -207,9 +208,7 @@ La base de pérdidas del CBA (`cba.loss_basis`) puede ser la pérdida económica
 El motor y la metodología de cálculo del LEC Tool es desarrollado por el **Disaster Risk Management Team** del **Banco Interamericano de Desarrollo**. La plataforma informática es desarrollada y mantenida por [GreenCode Software](https://www.greencodesoftware.com/).
 
 Equipo de desarrolladores:
-Andrés Abarca, Kenneth Otárola, Ginés Suárez
-
-Módulo de análisis costo-beneficio: consultoría externa (v6, 2026).
+Andrés Abarca, Kenneth Otárola, Ginés Suárez, Víctor Cardenas
 
 ---
 
