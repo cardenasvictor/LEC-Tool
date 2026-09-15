@@ -11,7 +11,7 @@
 [run]
 id           = "HND_Test"   # run identifier: prefix of every output file and name of the outputs/<id>/ folder
 output_dir   = "outputs"        # root folder for results (a sub-folder named after the id is created inside)
-show_figures = true            # true: also open figure windows (the run pauses until they are closed)
+show_figures = false            # true: also open figure windows (the run pauses until they are closed)
 figure_dpi   = 130              # resolution of the saved PNG figures
 
 [inputs]
