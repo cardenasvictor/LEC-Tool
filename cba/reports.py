@@ -124,6 +124,15 @@ def _insurance_section(results):
                  f"${a['expected_annual_payout']:,.3f}M per year")
         L.append(f"      Implied multiple: {a['implied_multiple']:.2f} "
                  f"(premium per unit of expected payout)")
+        if a['implied_multiple'] < 1.0:
+            L += [
+                "      WARNING: the premium is below the expected payout of this layer on this",
+                "      country's curve, which no insurer would accept, and the B/C of the",
+                "      policy is overstated. Under 'ccrif_rule' this happens on narrow or very",
+                "      remote layers, where the flat rate is too low for how often the layer",
+                "      is exhausted. Enter a quotation (pricing = 'quote') or use",
+                "      pricing = 'market_curve' for this layer.",
+            ]
         if a['donor_discount'] > 0:
             L.append(f"      Donor discount ${a['donor_discount']:,.3f}M -> government pays "
                      f"${a['net_premium']:,.3f}M")

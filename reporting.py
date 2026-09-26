@@ -254,6 +254,9 @@ def build_main_report(ctx):
         for name, a in getattr(cba['results'], 'insurance_analysis', {}).items():
             L.append(f"  {name}: B/C economic {a['bc_economic']:.3f}, fiscal {a['bc_fiscal']:.3f}; "
                      f"unpaid loss p99 {_money(a['unpaid_p99_without'])} -> {_money(a['unpaid_p99_with'])}")
+            if a['implied_multiple'] < 1.0:
+                L.append(f"  WARNING: {name} premium is below the layer's expected payout "
+                         f"(multiple {a['implied_multiple']:.2f}); see the CBA report.")
         L.append(f"  Full report:                   {cba['report_file'].name}")
 
     # --- Files --------------------------------------------------------------

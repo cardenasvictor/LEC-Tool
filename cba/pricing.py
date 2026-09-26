@@ -18,17 +18,21 @@ Two independent capabilities are provided.
    pricing is conventionally quoted this way: the more remote the layer,
    the lower the rate per unit of limit.
 
-   The default anchors below are a practitioner calibration for sovereign
-   catastrophe risk. They are NOT a market quote and must be replaced with
-   broker indications when those are available.
+   The anchors are a market indication for Central America and the
+   Caribbean obtained from a practising reinsurance broker (2026-08). They
+   are a point-in-time indication, not a binding quotation: reinsurance
+   prices are volatile and seasonal, and the table should be refreshed at
+   each renewal cycle. In v8 the table is an input in config.toml
+   ([insurance_pricing] market_curve_rp / market_curve_rol / market_curve_date);
+   the values below are only the defaults.
 
        Return period (years) :   1     5    10    25    50   100   200   500  1000
        Rate-on-Line          : 40%   35%   25%   22%    9%    5%  4.5%    4%  3.5%
 
-   These anchors are a market indication for Central America and the
-   Caribbean obtained from a practising reinsurance broker. They are a
-   point-in-time indication, not a binding quotation, and should be
-   refreshed at each renewal cycle.
+   Each anchor is read as the ROL of a THIN layer that is first hit at that
+   event return period. A wide layer is priced by integrating the curve
+   across the layer, slice by slice (insurance_layer.price_layer); evaluating
+   the curve only at the attachment point overprices a wide layer.
 
    Interpolation is PCHIP (monotone cubic Hermite) in log-log space.
    A high-order polynomial through these anchors was evaluated and
@@ -36,10 +40,11 @@ Two independent capabilities are provided.
    between and beyond the anchors.
 
    For documentation purposes a smooth closed form is also provided
-   (``rol_quadratic_closed_form``), a least-squares quadratic in log-log
-   space that reproduces the anchors with R^2 = 0.9915 in logs and a
-   maximum absolute error of 11 per cent. The closed form is intended for
-   the conceptual note; the interpolation is what the code uses.
+   (``rol_quadratic_closed_form``), a least-squares cubic in log-log space.
+   With the current anchors it reproduces them with R^2 = 0.973 in logs and
+   a maximum error of 29 per cent (the drop between 1 in 25 and 1 in 50 is
+   hard to follow with a smooth curve). It is indicative only; the
+   interpolation is what the code uses.
 
 2. COHERENCE DIAGNOSTIC (``diagnose_insurance_pricing``)
    Given the simulated payouts actually produced by the layer, the
@@ -51,16 +56,22 @@ Two independent capabilities are provided.
 
    The implied multiple is the number of currency units of premium charged
    per unit of expected loss. Values below 1.0 mean the insurer is selling
-   below expected loss, which no reinsurer does. Sovereign catastrophe
-   programmes typically price between 1.2 and 3.0.
+   below expected loss, which no reinsurer does. Market multiples rise with
+   the remoteness of the layer: sovereign catastrophe bonds placed in Latin
+   America and the Caribbean in 2023-2026 priced between about 2 and 5.5
+   times expected loss (Artemis deal directory).
 
    Following the diagnose-do-not-stop convention already used elsewhere in
    this codebase for absurd inputs, the diagnostic never raises. It flags
    and lets the analysis run.
 
-The curve is OFF by default. Existing configurations are unaffected: unless
-``InsuranceConfig.pricing_mode`` is changed, the premium is computed exactly
-as in previous versions.
+How the premium is set (v8)
+---------------------------
+The premium itself is set in insurance_layer.py, before the simulation,
+from the method chosen in [insurance_pricing] ('ccrif_rule' by default,
+'market_curve', 'fixed_rol') or from a quotation entered per instrument.
+cba.engine reports the implied multiple and the protection indicators of
+every insurance instrument; this module provides the market curve.
 """
 
 from __future__ import annotations
@@ -87,8 +98,8 @@ DEFAULT_RP_ANCHORS: List[float] = [1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 200.0, 500
 #: Rate-on-Line at each anchor return period (fraction of ceded limit).
 DEFAULT_ROL_ANCHORS: List[float] = [0.40, 0.35, 0.25, 0.22, 0.09, 0.05, 0.045, 0.04, 0.035]
 
-#: Coefficients of the documentation closed form, quadratic in log-log space:
-#:     ln(ROL) = C2 * ln(RP)^2 + C1 * ln(RP) + C0
+#: Coefficients of the documentation closed form, cubic in log-log space:
+#:     ln(ROL) = C3 * ln(RP)^3 + C2 * ln(RP)^2 + C1 * ln(RP) + C0
 CLOSED_FORM_COEFFS = (0.02809, -0.29888, 0.38320, -0.93690)
 
 #: Bounds applied to any ROL returned by the curve. The upper bound is not a

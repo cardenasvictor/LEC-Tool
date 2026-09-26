@@ -140,8 +140,8 @@ spread_tiers          = [[0.02, 0.0], [0.05, 0.015], [inf, 0.05]]   # [upper eve
 # instrument block does not give a quotation (gross_premium).
 #   "ccrif_rule"   (default) the layer is cut into thin slices; slices hit more often
 #                  than 1 in cutoff_rp years are priced on the market curve below,
-#                  more remote slices at flat_rol. Reproduces sovereign parametric
-#                  pool pricing in Central America within about 10 %.
+#                  more remote slices at flat_rol. Default values: consultant's
+#                  calibration to sovereign parametric pool pricing in the region.
 #   "market_curve" every slice priced on the market curve (commercial reinsurance).
 #   "fixed_rol"    legacy: premium = rate_on_line x coverage limit.
 # A premium from a real quotation always takes precedence: set pricing = "quote"

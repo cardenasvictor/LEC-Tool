@@ -38,9 +38,9 @@ Pricing methods
     The layer is cut into thin slices. Each slice is priced at its own
     return period: slices hit more often than ``cutoff_rp`` use the market
     ROL curve; more remote slices use the flat rate ``flat_rol``. The
-    premium is the sum over slices. With the default cutoff (1 in 10 years)
-    and flat rate (5%) this reproduces sovereign parametric pool pricing for
-    Central American rainfall and earthquake layers within about 10%.
+    premium is the sum over slices. The default cutoff (1 in 10 years) and
+    flat rate (5%) are the consultant's calibration to sovereign parametric
+    pool pricing observed in the region.
 ``market_curve``
     Every slice priced on the market ROL curve (commercial reinsurance).
 ``quote``
