@@ -39,9 +39,16 @@ def _format_config_summary(results) -> str:
                 f"--- {inst_name} (Parametric Insurance) ---",
                 f"  Layer: ${inst_cfg.attachment_point:.0f}M"
                 f" - ${inst_cfg.exhaustion_point:.0f}M",
-                f"  Ceding: {inst_cfg.ceding_percentage:.1%}",
-                f"  ROL: {inst_cfg.rate_on_line:.1%}",
-                f"  Annual premium: ${inst_cfg.premium:.2f}M",
+                f"  Ceding: {inst_cfg.ceding_percentage:.3%}",
+                f"  Coverage limit: ${(inst_cfg.exhaustion_point - inst_cfg.attachment_point) * inst_cfg.ceding_percentage:.2f}M",
+                f"  Payout rule: {getattr(inst_cfg, 'payout_mode', 'proportional')}"
+                + (", one payout per year" if getattr(inst_cfg, 'one_payout_per_year', False) else ", per event"),
+                f"  Pricing: {getattr(inst_cfg, 'pricing_method', 'fixed_rol')}",
+                f"  Annual premium (gross): ${inst_cfg.premium:.3f}M",
+            ] + ([
+                f"  Donor discount: ${inst_cfg.donor_discount:.3f}M"
+                f" -> government pays ${inst_cfg.premium - inst_cfg.donor_discount:.3f}M",
+            ] if getattr(inst_cfg, 'donor_discount', 0.0) > 0 else []) + [
                 "",
             ]
 
@@ -87,6 +94,55 @@ def _format_config_summary(results) -> str:
     return "\n".join(lines)
 
 
+def _insurance_section(results):
+    """
+    v8 insurance block. It leads with protection, because that is what an
+    insurance policy is bought for, and reads the benefit-cost ratio in that
+    light: a fairly priced policy has a ratio below 1.
+    """
+    analysis = getattr(results, 'insurance_analysis', {}) or {}
+    if not analysis:
+        return []
+    L = ["-" * 70, "INSURANCE: PROTECTION FIRST, THEN COST", "-" * 70]
+    for name, a in analysis.items():
+        L.append(f"  {name}")
+        L.append("    Protection")
+        L.append(f"      Probability the policy pays at least once in the horizon: "
+                 f"{a['prob_pays_in_horizon']:.1%}")
+        L.append(f"      Average payout in a year it pays:          ${a['mean_payout_when_paid']:,.2f}M"
+                 f"  (limit ${a['coverage_limit']:,.2f}M)")
+        L.append(f"      Share of that year's loss it covers:       "
+                 f"{a['mean_share_of_loss_when_paid']:.1%} on average")
+        L.append(f"      Unpaid loss, 1-in-20 outcome (p95, PV):    "
+                 f"${a['unpaid_p95_without']:,.1f}M without this policy -> ${a['unpaid_p95_with']:,.1f}M with it")
+        L.append(f"      Unpaid loss, 1-in-100 outcome (p99, PV):   "
+                 f"${a['unpaid_p99_without']:,.1f}M without this policy -> ${a['unpaid_p99_with']:,.1f}M with it")
+        L.append("      (the rest of the strategy is in place in both cases)")
+        L.append("    Price")
+        L.append(f"      Premium source: {a['pricing_method']}")
+        L.append(f"      Gross premium ${a['gross_premium']:,.3f}M per year; expected payout "
+                 f"${a['expected_annual_payout']:,.3f}M per year")
+        L.append(f"      Implied multiple: {a['implied_multiple']:.2f} "
+                 f"(premium per unit of expected payout)")
+        if a['donor_discount'] > 0:
+            L.append(f"      Donor discount ${a['donor_discount']:,.3f}M -> government pays "
+                     f"${a['net_premium']:,.3f}M")
+        L.append("    Benefit-cost")
+        L.append(f"      B/C economic (gross premium):   {a['bc_economic']:.3f}")
+        L.append(f"      B/C fiscal (premium net of donor discount): {a['bc_fiscal']:.3f}")
+        L.append("")
+    L += [
+        "  How to read the insurance B/C: an insurer charges more than the",
+        "  expected payout to hold capital for the bad years, so a fairly",
+        "  priced policy has an economic B/C below 1 (roughly 1.1 divided by",
+        "  the implied multiple). A ratio above 1 signals either a price below",
+        "  expected loss or a donor subsidy (fiscal B/C). The policy is judged",
+        "  by the protection block above, not by its B/C alone.",
+        "",
+    ]
+    return L
+
+
 def generate_text_report(results) -> str:
     """Generate a comprehensive text report of all indicators."""
     lines = []
@@ -96,6 +152,7 @@ def generate_text_report(results) -> str:
     lines.append("")
     lines.append(_format_config_summary(results))
     lines.append("")
+    lines.extend(_insurance_section(results))
 
     # --- Core indicators ---
     lines.append("-" * 70)
@@ -134,8 +191,10 @@ def generate_text_report(results) -> str:
     for name, ratios in c.bc_ratios_by_instrument.items():
         finite = ratios[np.isfinite(ratios)]
         if len(finite) > 0:
+            note = ("  (insurance: economic ratio; see the insurance section)"
+                    if results.instrument_types.get(name) == 'insurance' else "")
             lines.append(f"    {name:16s}  E[B/C]={np.mean(finite):.3f}  "
-                         f"P(B/C>1)={np.mean(ratios > 1.0):.1%}")
+                         f"P(B/C>1)={np.mean(ratios > 1.0):.1%}{note}")
     lines.append("")
 
     # --- Efficiency indicators ---

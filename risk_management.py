@@ -36,7 +36,8 @@ def standard_insurance_payout(values, attachment_point=15, exhaustion_point=50,
                                ceding_percentage=0.5,
                                payout_mode='proportional',
                                one_payout_per_year=False,
-                               event_years=None):
+                               event_years=None,
+                               minimum_payout=0.0):
     """
     Apply parametric insurance coverage to a sequence of event losses.
 
@@ -160,6 +161,12 @@ def standard_insurance_payout(values, attachment_point=15, exhaustion_point=50,
         two conventions rarely differ, because the season falls inside a
         single calendar year, but the choice should be stated explicitly
         whenever the peril is not seasonal.
+    minimum_payout : float, default 0.0
+        Payout floor ($MM) for any event that triggers the policy. Sovereign
+        parametric pools pay at least the annual gross premium whenever the
+        policy is triggered, even when the proportional ramp would give
+        less. The floor never exceeds the coverage limit and has no effect
+        under the binary rule, which already pays the full limit.
 
     Returns
     -------
@@ -224,6 +231,8 @@ def standard_insurance_payout(values, attachment_point=15, exhaustion_point=50,
             payout = limit
         else:
             payout = (loss - attachment_point) * ceding_percentage
+            if minimum_payout > 0:
+                payout = min(max(payout, minimum_payout), limit)
 
         payouts.append(payout)
         if one_payout_per_year and payout > 0:
@@ -554,6 +563,7 @@ def apply_strategy(event_catalogue, drm_configs, catalogue_length):
                     payout_mode=cfg.get('payout_mode', 'proportional'),
                     one_payout_per_year=cfg.get('one_payout_per_year', False),
                     event_years=ins_years,
+                    minimum_payout=cfg.get('minimum_payout', 0.0),
                 ))
 
             elif instrument_type == 'ppo':

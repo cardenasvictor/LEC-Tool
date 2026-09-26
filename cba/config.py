@@ -86,6 +86,21 @@ class InsuranceConfig:
     # standard_insurance_payout for the measured magnitudes.
     one_payout_per_year: bool = False
 
+    # --- v8 -----------------------------------------------------------------
+    # Donor discount on the annual premium ($MM). Sovereign pools such as
+    # CCRIF are partly funded by donors who pay part of the premium. The
+    # economic cost of the insurance is the gross premium; the cost to the
+    # government is the gross premium less this discount. Reported as the
+    # economic and the fiscal benefit-cost ratio of the instrument.
+    donor_discount: float = 0.0
+    # How the premium was set: 'ccrif_rule', 'market_curve', 'quote' or
+    # 'fixed_rol' (see insurance_layer.py). Informational.
+    pricing_method: str = "fixed_rol"
+
+    @property
+    def net_premium(self) -> float:
+        return self.premium - self.donor_discount
+
     def __post_init__(self):
         if self.premium is None:
             coverage = (self.exhaustion_point - self.attachment_point) * self.ceding_percentage
@@ -101,6 +116,11 @@ class InsuranceConfig:
             raise ValueError(
                 f"InsuranceConfig: ceding_percentage must be in [0, 1], got "
                 f"{self.ceding_percentage}."
+            )
+        if not (0.0 <= self.donor_discount <= self.premium):
+            raise ValueError(
+                f"InsuranceConfig: donor_discount ({self.donor_discount}) must be "
+                f"between 0 and the gross premium ({self.premium})."
             )
 
 

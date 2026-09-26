@@ -120,7 +120,8 @@ _W = 72
 
 
 def _money(x):
-    return f'${x:,.1f} MM'
+    # Small amounts (premiums, limits) keep two decimals so they stay readable.
+    return f'${x:,.2f} MM' if abs(x) < 10 else f'${x:,.1f} MM'
 
 
 def _rule(char='-'):
@@ -187,6 +188,7 @@ def build_main_report(ctx):
         L.append("  Instruments: " + ', '.join(f"{i['name']} ({i['type']})" for i in ctx['instruments']))
     else:
         L.append("  No instruments declared: losses are fully retained.")
+    L += _insurance_layer_lines(ctx.get('layers'))
     L.append('')
     scenarios = ctx['scenarios']          # list of (column label, stats_row)
     header = ['Median over simulations'] + [s[0] for s in scenarios]
@@ -249,6 +251,9 @@ def build_main_report(ctx):
         d = getattr(cba['results'], 'drr', None)
         if d is not None:
             L.append(f"  DRR B/C direct / indirect:     {d.bc_direct:.3f} / {d.bc_indirect:.3f}")
+        for name, a in getattr(cba['results'], 'insurance_analysis', {}).items():
+            L.append(f"  {name}: B/C economic {a['bc_economic']:.3f}, fiscal {a['bc_fiscal']:.3f}; "
+                     f"unpaid loss p99 {_money(a['unpaid_p99_without'])} -> {_money(a['unpaid_p99_with'])}")
         L.append(f"  Full report:                   {cba['report_file'].name}")
 
     # --- Files --------------------------------------------------------------
@@ -257,3 +262,38 @@ def build_main_report(ctx):
         L.append(f"  {p}")
     L += ['', _rule('='), 'END OF REPORT', _rule('=')]
     return '\n'.join(L)
+
+
+_METHOD_LABEL = {
+    'ccrif_rule': 'sovereign-pool rule (market curve below the cutoff, flat rate above)',
+    'market_curve': 'commercial reinsurance curve',
+    'quote': 'quotation entered by the user',
+    'fixed_rol': 'fixed Rate-on-Line',
+}
+
+
+def _insurance_layer_lines(layers):
+    """Insurance layers placed on this country's curve (v8)."""
+    if not layers or not layers.get('summaries') and not layers.get('notes'):
+        return []
+    L = []
+    for s in layers.get('summaries', []):
+        L += ['', f"  Insurance '{s.name}' on this country's loss curve:"]
+        L.append(f"    Attachment:        {_money(s.attachment)}  (event return period 1 in {s.attachment_rp:,.1f} years)")
+        L.append(f"    Exhaustion:        {_money(s.exhaustion)}  (1 in {s.exhaustion_rp:,.1f} years)")
+        L.append(f"    Coverage limit:    {_money(s.coverage_limit)}  (ceding {s.ceding:.3%} of the layer)")
+        rule = f"{s.payout_mode}" + (", one payout per year" if s.one_payout_per_year else ", per event")
+        if s.minimum_payout > 0:
+            rule += f", minimum payout {_money(s.minimum_payout)}"
+        L.append(f"    Payout rule:       {rule}")
+        L.append(f"    Premium source:    {_METHOD_LABEL.get(s.method, s.method)}"
+                 + (f", curve dated {s.curve_date}" if s.curve_date else ""))
+        L.append(f"    Gross premium:     {_money(s.gross_premium)}  (effective ROL {s.effective_rol:.1%})")
+        if s.donor_discount > 0:
+            L.append(f"    Donor discount:    {_money(s.donor_discount)}  -> premium paid by the government {_money(s.net_premium)}")
+        refs = ', '.join(f"{k} {_money(v)}" for k, v in s.reference_premiums.items() if k != s.method)
+        if refs:
+            L.append(f"    For reference:     {refs}")
+    for n in layers.get('notes', []):
+        L.append(f"  WARNING: {n}")
+    return L
