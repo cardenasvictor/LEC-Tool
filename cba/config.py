@@ -69,6 +69,23 @@ class InsuranceConfig:
     premium: Optional[float] = None
     cost_function: str = "primary"
 
+    # --- Payout behaviour -------------------------------------------------
+    # These two fields mirror the arguments of
+    # risk_management.standard_insurance_payout and MUST be kept consistent
+    # with the values passed there through drm_configs. They live here so
+    # the pricing diagnostic knows which actuarial benchmark applies.
+    #
+    # 'proportional' pays the ceded share of the loss inside the layer, as a
+    # real CCRIF policy does. 'binary' pays the full coverage limit on any
+    # loss above the attachment point; it is a teaching simplification used
+    # in the worked example so the mechanism can be drawn without a ramp.
+    payout_mode: str = "proportional"
+    # When True the policy pays at most once per policy year, cover being
+    # restored only at renewal. The two options move the expected payout in
+    # OPPOSITE directions and must be decided together; see
+    # standard_insurance_payout for the measured magnitudes.
+    one_payout_per_year: bool = False
+
     def __post_init__(self):
         if self.premium is None:
             coverage = (self.exhaustion_point - self.attachment_point) * self.ceding_percentage
@@ -116,6 +133,13 @@ class PPOConfig:
     loan_interest_rate: float = 0.035
     repayment_years: int = 5
     front_end_fee_rate: float = 0.0025
+    # Grace period on the PPO loan, in years. During grace only interest is
+    # paid; amortisation starts afterwards. Multilateral contingent credit
+    # normally carries a grace period of 2 to 5 years; a value of zero
+    # describes no real contract and overstates the present value of the
+    # cost. The default is kept at zero for backward compatibility with
+    # earlier versions and is expected to be set by the analyst.
+    grace_period_years: float = 0.0
     cost_function: str = "primary"
 
     def __post_init__(self):
@@ -137,6 +161,24 @@ class PPOConfig:
         if self.repayment_years <= 0:
             raise ValueError(
                 f"PPOConfig: repayment_years must be > 0, got {self.repayment_years}."
+            )
+        # Grace must leave a strictly positive amortisation window. With
+        # grace equal to the repayment term the principal is never
+        # amortised, which describes a bullet loan. Bullet repayment is not
+        # modelled here, so the configuration is rejected rather than
+        # silently producing a division by an empty amortisation period.
+        if self.grace_period_years < 0:
+            raise ValueError(
+                f"PPOConfig: grace_period_years must be >= 0, got "
+                f"{self.grace_period_years}."
+            )
+        if self.grace_period_years >= self.repayment_years:
+            raise ValueError(
+                f"PPOConfig: grace_period_years ({self.grace_period_years}) must "
+                f"be strictly less than repayment_years ({self.repayment_years}). "
+                f"With grace equal to or longer than the term there is no "
+                f"amortisation window and the principal would never be repaid. "
+                f"Bullet repayment is outside the scope of this module."
             )
 
 
@@ -229,9 +271,32 @@ class DDOConfig:
     # Contractual interest rate on the DDO loan (NOT the social discount rate).
     loan_interest_rate: float = 0.035
     repayment_years: int = 5
+    # Grace period on the DDO loan, in years. See PPOConfig for the rationale;
+    # World Bank CAT-DDO operations normally carry a grace period. The default
+    # is kept at zero for backward compatibility.
+    grace_period_years: float = 0.0
     cost_function: str = "primary"
     ddo_threshold: Optional[float] = None   # loss trigger ($MM)
     ddo_available: Optional[float] = None   # fixed payout per activation ($MM)
+
+    def __post_init__(self):
+        if self.repayment_years <= 0:
+            raise ValueError(
+                f"DDOConfig: repayment_years must be > 0, got {self.repayment_years}."
+            )
+        if self.grace_period_years < 0:
+            raise ValueError(
+                f"DDOConfig: grace_period_years must be >= 0, got "
+                f"{self.grace_period_years}."
+            )
+        if self.grace_period_years >= self.repayment_years:
+            raise ValueError(
+                f"DDOConfig: grace_period_years ({self.grace_period_years}) must "
+                f"be strictly less than repayment_years ({self.repayment_years}). "
+                f"With grace equal to or longer than the term there is no "
+                f"amortisation window and the principal would never be repaid. "
+                f"Bullet repayment is outside the scope of this module."
+            )
 
 
 # ================================================================
