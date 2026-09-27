@@ -82,7 +82,7 @@ ccf_person  = 1650      # $ per affected person
 Pop_exposed = 10.83e6   # exposed population
 
 [[strategy.instruments]]
-name          = "BID DDO $40MM"
+name          = "BID DDO"
 type          = "ddo"
 ddo_threshold = 120   # $MM, event loss that triggers the drawdown
 ddo_available = 80    # $MM, fixed payout per activation
@@ -140,17 +140,20 @@ spread_tiers          = [[0.02, 0.0], [0.05, 0.015], [inf, 0.05]]   # [upper eve
 # -----------------------------------------------------------------------------
 # Insurance premium (v8). How the premium of each insurance layer is set when the
 # instrument block does not give a quotation (gross_premium).
-#   "ccrif_rule"   (default) the layer is cut into thin slices; slices hit more often
+#   "rol_rule"     (default) the layer is cut into thin slices; slices hit more often
 #                  than 1 in cutoff_rp years are priced on the market curve below,
-#                  more remote slices at flat_rol. Default values: consultant's
-#                  calibration to sovereign parametric pool pricing in the region.
+#                  more remote slices at flat_rol. Default values are consistent with
+#                  the pricing structure of sovereign risk-pooling facilities; replace
+#                  them with the country's quotation whenever available. With the
+#                  default layer (1 in 15 to 1 in 50 years) every slice lies above the
+#                  cutoff, so the rule is equivalent to a flat ROL of flat_rol.
 #   "market_curve" every slice priced on the market curve (commercial reinsurance).
 #   "fixed_rol"    legacy: premium = rate_on_line x coverage limit.
 # A premium from a real quotation always takes precedence: set pricing = "quote"
 # and gross_premium in the instrument block.
 # -----------------------------------------------------------------------------
 [insurance_pricing]
-method     = "ccrif_rule"
+method     = "rol_rule"
 cutoff_rp  = 10      # years
 flat_rol   = 0.05    # rate on line for slices more remote than cutoff_rp
 # Market Rate-on-Line by event return period of a thin layer (Central America and
@@ -160,6 +163,8 @@ market_curve_rp   = [1, 5, 10, 25, 50, 100, 200, 500, 1000]
 market_curve_rol  = [0.40, 0.35, 0.25, 0.22, 0.09, 0.05, 0.045, 0.04, 0.035]
 market_curve_date = "2026-08"
 # Payout defaults for every insurance instrument (overridable per instrument).
+# one_payout_per_year is a conservative approximation of the annual aggregate limit
+# of sovereign parametric policies; set it to false to allow payouts per event.
 payout_mode         = "proportional"
 one_payout_per_year = true
 payout_floor        = true

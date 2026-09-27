@@ -68,7 +68,7 @@ Two independent capabilities are provided.
 How the premium is set (v8)
 ---------------------------
 The premium itself is set in insurance_layer.py, before the simulation,
-from the method chosen in [insurance_pricing] ('ccrif_rule' by default,
+from the method chosen in [insurance_pricing] ('rol_rule' by default,
 'market_curve', 'fixed_rol') or from a quotation entered per instrument.
 cba.engine reports the implied multiple and the protection indicators of
 every insurance instrument; this module provides the market curve.

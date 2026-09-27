@@ -34,7 +34,7 @@ All v7 changes are additive: with their defaults the code behaves exactly as v3.
 
 | Method | Premium |
 | --- | --- |
-| `ccrif_rule` (default) | The layer is cut into thin slices, each priced at its own event return period on the country curve: slices hit more often than 1 in `cutoff_rp` years (10) on the market ROL curve, more remote slices at `flat_rol` (5%). Default parameters are the consultant's calibration to sovereign parametric pool pricing in the region |
+| `rol_rule` (default) | The layer is cut into thin slices, each priced at its own event return period on the country curve: slices hit more often than 1 in `cutoff_rp` years (10) on the market ROL curve, more remote slices at `flat_rol` (5%). Default parameters are consistent with the pricing structure of sovereign risk-pooling facilities. Replace them with the country's actual quotation whenever available (pricing = "quote" and gross_premium in the instrument block). |
 | `market_curve` | Every slice on the market ROL curve (commercial reinsurance) |
 | `quote` | The gross premium of a real quotation (`gross_premium`), with an optional donor discount. Takes precedence |
 | `fixed_rol` | Premium = `rate_on_line` x coverage limit (v3.0.0 behaviour) |
@@ -47,7 +47,7 @@ The market curve is an input with a date (`market_curve_date`): reinsurance pric
 | --- | --- | --- |
 | CCRIF layer | 50-190 $MM (1 in 1.8 to 1 in 8 years) | 430-2,557 $MM (1 in 15 to 1 in 50 years) |
 | Coverage limit | 9.24 $MM | 9.24 $MM |
-| Premium | 0.46 $MM (fixed 5% ROL) | 0.46 $MM (`ccrif_rule`: the whole layer is above the cutoff) |
+| Premium | 0.46 $MM (fixed 5% ROL) | 0.46 $MM (`rol_rule`: the whole layer is above the cutoff) |
 | Expected annual payout | 2.01 $MM | 0.33 $MM |
 | Implied multiple | 0.23 | 1.39 |
 | CCRIF B/C | 4.79 | 0.79 |
@@ -71,9 +71,10 @@ As requested for v3.0.0, the test batteries are delivered separately and are not
 
 ## 5. Observations for the team
 
-- **Narrow layers and `ccrif_rule`.** On a country whose curve is almost flat between the two return periods (Nicaragua: 1,134 to 1,213 $MM), almost every event that touches the layer exhausts it, and the 5% flat rate falls below the expected payout (multiple 0.92). The report flags any layer priced below its expected payout. For such layers use a quotation or `market_curve`.
+- **The default layer and `rol_rule`.** With the default layer (1-in-15 to 1-in-50 years) every slice lies above cutoff_rp, so the rule is equivalent to a flat ROL of flat_rol; the market curve applies only to the part of the layer more frequent than 1 in cutoff_rp years. For narrow layers close to the cutoff the flat ROL can fall below the expected payout; the report flags this (implied multiple < 1). In that case use a quotation or market_curve.
+- **Narrow layers and `rol_rule`.** On a country whose curve is almost flat between the two return periods (Nicaragua: 1,134 to 1,213 $MM), almost every event that touches the layer exhausts it, and the 5% flat rate falls below the expected payout (multiple 0.92). The report flags any layer priced below its expected payout. For such layers use a quotation or `market_curve`.
 - **Brazil** has no probabilistic tail; its empirical curve does not reach 1 in 50 years. The exhaustion point is held at the curve end and the run warns.
 - **Other instruments are still calibrated for Honduras.** The DDO thresholds (120 $MM), the PPO schedule, the CCF population and payout function, and the CNC parameters are Honduras values in `config.toml`. The DDO and PPO thresholds can now be given as return periods (`ddo_threshold_rp`, `ppo_loss_trigger_rp`); the defaults were not changed.
 - **The CNC must be set for each country.** `[cba.cnc]` holds the GDP, base rate and sovereign spread of Honduras. The CNC classifies each event by its size relative to GDP to set the spread of the ex-post debt, so running another country with these values misstates its CNC: with a GDP far below the real one, most events look catastrophic and the saving is overstated. In the 23-country run of section 4 the CNC used the Honduras values and its results are not valid outside Honduras; the insurance results are, because the layer is placed on each country's curve. Update `gdp` and `sovereign_base_spread` (and `base_rate` if needed) before running a country. A possible improvement is a per-country table (GDP, sovereign spread, year and source) read by the tool from the country being run.
-- **One payout per year.** Set as the default following the mechanics of sovereign parametric policies described by the project team. Some policies include reinstatement cover for earthquake and tropical cyclone; for those set `one_payout_per_year = false`.
+- **One payout per year.** One payout per policy year is a conservative approximation of the annual aggregate limit of sovereign parametric policies: a second qualifying event in the same year pays nothing, even if part of the limit remains. Set one_payout_per_year = false to allow payouts per event.
 - **Entering a CCRIF quotation.** Use the return periods of the attachment and of the limit of liability, the coverage limit and the gross premium. Do not copy the dollar amounts of the attachment and exhaustion points: they are on the scale of CCRIF's own model, not of the country catalogue.

@@ -147,9 +147,9 @@ def _insurance_section(results):
             L += [
                 "      WARNING: the premium is below the expected payout of this layer on this",
                 "      country's curve, which no insurer would accept, and the B/C of the",
-                "      policy is overstated. Under 'ccrif_rule' this happens on narrow or very",
-                "      remote layers, where the flat rate is too low for how often the layer",
-                "      is exhausted. Enter a quotation (pricing = 'quote') or use",
+                "      policy is overstated. Under 'rol_rule' this happens on narrow layers",
+                "      close to the cutoff, where the flat rate is too low for how often the",
+                "      layer is exhausted. Enter a quotation (pricing = 'quote') or use",
                 "      pricing = 'market_curve' for this layer.",
             ]
         if a['donor_discount'] > 0:

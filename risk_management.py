@@ -83,8 +83,10 @@ def standard_insurance_payout(values, attachment_point=15, exhaustion_point=50,
         The policy pays at most once per policy year. Once it has paid, it
         is spent for the remainder of that year even if the payout was well
         below the coverage limit; cover is restored only at renewal, when
-        the next annual premium is paid. This matches the contractual
-        reality described by the project team. Requires *event_years*.
+        the next annual premium is paid. This is a conservative
+        approximation of the annual aggregate limit of sovereign parametric
+        policies, under which a second event in the same year still pays
+        while part of the limit remains. Requires *event_years*.
 
     Why both features matter, and why they must be decided together
     ---------------------------------------------------------------

@@ -93,7 +93,7 @@ class InsuranceConfig:
     # government is the gross premium less this discount. Reported as the
     # economic and the fiscal benefit-cost ratio of the instrument.
     donor_discount: float = 0.0
-    # How the premium was set: 'ccrif_rule', 'market_curve', 'quote' or
+    # How the premium was set: 'rol_rule', 'market_curve', 'quote' or
     # 'fixed_rol' (see insurance_layer.py). Informational.
     pricing_method: str = "fixed_rol"
 

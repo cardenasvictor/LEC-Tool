@@ -34,13 +34,16 @@ are evaluated event by event, so this is the consistent scale.
 
 Pricing methods
 ---------------
-``ccrif_rule`` (default)
+``rol_rule`` (default)
     The layer is cut into thin slices. Each slice is priced at its own
     return period: slices hit more often than ``cutoff_rp`` use the market
     ROL curve; more remote slices use the flat rate ``flat_rol``. The
     premium is the sum over slices. The default cutoff (1 in 10 years) and
-    flat rate (5%) are the consultant's calibration to sovereign parametric
-    pool pricing observed in the region.
+    flat rate (5%) are consistent with the pricing structure of sovereign
+    risk-pooling facilities; replace them with the country's actual
+    quotation whenever available (pricing = 'quote'). With the default
+    layer (1 in 15 to 1 in 50 years) every slice lies above the cutoff, so
+    the rule is equivalent to a flat ROL of ``flat_rol``.
 ``market_curve``
     Every slice priced on the market ROL curve (commercial reinsurance).
 ``quote``
@@ -65,7 +68,7 @@ from cba.pricing import (
     rol_from_return_period, DEFAULT_RP_ANCHORS, DEFAULT_ROL_ANCHORS,
 )
 
-PRICING_METHODS = ('ccrif_rule', 'market_curve', 'quote', 'fixed_rol')
+PRICING_METHODS = ('rol_rule', 'market_curve', 'quote', 'fixed_rol')
 
 # Number of slices used to integrate a layer. The result is stable (changes
 # below 0.1%) from about 100 slices; 400 leaves a wide margin.
@@ -141,7 +144,7 @@ def return_period_at_loss(lec_curve, losses):
 @dataclass
 class PricingSettings:
     """Contents of [insurance_pricing] in config.toml."""
-    method: str = 'ccrif_rule'
+    method: str = 'rol_rule'
     cutoff_rp: float = 10.0
     flat_rol: float = 0.05
     rate_on_line: float = 0.05
@@ -161,14 +164,14 @@ def price_layer(lec_curve, attachment, exhaustion, ceding, method, s: PricingSet
     limit = ceding * (exhaustion - attachment)
     if method == 'fixed_rol':
         return float(s.rate_on_line * limit)
-    if method not in ('ccrif_rule', 'market_curve'):
+    if method not in ('rol_rule', 'market_curve'):
         raise LayerError(f"price_layer: unsupported method '{method}'.")
     edges = np.linspace(attachment, exhaustion, N_SLICES + 1)
     mids = 0.5 * (edges[:-1] + edges[1:])
     rp = return_period_at_loss(lec_curve, mids)
     rol = np.asarray(rol_from_return_period(rp, rp_anchors=s.curve_rp,
                                             rol_anchors=s.curve_rol), dtype=float)
-    if method == 'ccrif_rule':
+    if method == 'rol_rule':
         rol = np.where(rp < s.cutoff_rp, rol, s.flat_rol)
     return float(np.sum(rol * ceding * np.diff(edges)))
 
@@ -314,7 +317,7 @@ def resolve_instruments(instruments, lec_curve, settings: PricingSettings):
             minimum = min(gross, limit) if floor else 0.0
 
             refs = {}
-            for m in ('ccrif_rule', 'market_curve'):
+            for m in ('rol_rule', 'market_curve'):
                 refs[m] = price_layer(lec_curve, ap, ep, ceding, m, settings)
 
             cfg.update({
@@ -336,7 +339,7 @@ def resolve_instruments(instruments, lec_curve, settings: PricingSettings):
                 gross_premium=gross, donor_discount=discount, net_premium=gross - discount,
                 effective_rol=gross / limit if limit > 0 else float('nan'),
                 payout_mode=payout_mode, one_payout_per_year=per_year, minimum_payout=minimum,
-                curve_date=settings.curve_date if method in ('ccrif_rule', 'market_curve') else None,
+                curve_date=settings.curve_date if method in ('rol_rule', 'market_curve') else None,
                 reference_premiums=refs, warnings=warnings,
             ))
         for w in warnings:

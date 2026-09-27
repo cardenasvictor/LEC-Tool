@@ -488,7 +488,7 @@ def _load_insurance_pricing(raw, cba):
     method = _get(sec, 'method', 'insurance_pricing', s.method, str)
     if method not in PRICING_METHODS or method == 'quote':
         raise ConfigError(
-            "[insurance_pricing] 'method' must be 'ccrif_rule', 'market_curve' or 'fixed_rol' "
+            "[insurance_pricing] 'method' must be 'rol_rule', 'market_curve' or 'fixed_rol' "
             "('quote' is set per instrument with gross_premium)."
         )
     s.method = method

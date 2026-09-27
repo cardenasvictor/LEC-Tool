@@ -327,7 +327,7 @@ def build_main_report(ctx):
 
 
 _METHOD_LABEL = {
-    'ccrif_rule': 'sovereign-pool rule (market curve below the cutoff, flat rate above)',
+    'rol_rule': 'layered rule (market curve below the cutoff, flat rate above)',
     'market_curve': 'commercial reinsurance curve',
     'quote': 'quotation entered by the user',
     'fixed_rol': 'fixed Rate-on-Line',

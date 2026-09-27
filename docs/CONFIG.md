@@ -79,11 +79,11 @@ Opciones del seguro (por instrumento; si se omiten se toman de `[insurance_prici
 
 | Clave | Tipo | Descripción |
 | --- | --- | --- |
-| `pricing` | `"ccrif_rule"`, `"market_curve"`, `"quote"`, `"fixed_rol"` | Cómo se fija la prima (ver `[insurance_pricing]`) |
+| `pricing` | `"rol_rule"`, `"market_curve"`, `"quote"`, `"fixed_rol"` | Cómo se fija la prima (ver `[insurance_pricing]`) |
 | `gross_premium` | número > 0 | Prima bruta anual de una cotización ($MM). Implica `pricing = "quote"` |
 | `donor_discount` / `donor_discount_share` | número ≥ 0 / número en [0, 1] | Parte de la prima pagada por un donante, en $MM o como proporción. El reporte da el B/C económico (prima bruta) y el fiscal (prima neta) |
 | `payout_mode` | `"proportional"`, `"binary"` | Proporcional: el pago crece dentro de la capa (mecánica de CCRIF). Binaria: paga el límite al cruzar el umbral (simplificación didáctica) |
-| `one_payout_per_year` | booleano | La póliza paga como máximo una vez por año |
+| `one_payout_per_year` | booleano | La póliza paga como máximo una vez por año. Es una aproximación conservadora del límite agregado anual de las pólizas soberanas; `false` permite un pago por evento |
 | `payout_floor` | booleano | Una póliza activada paga al menos la prima bruta (sin pasar del límite) |
 
 Cómo capturar una cotización de CCRIF: `attachment_rp` = "Punto de activación – período de retorno"; `exhaustion_rp` = "Límite de responsabilidad – período de retorno"; `coverage_limit` = "Límite de cobertura"; `gross_premium` = "Prima bruta"; `donor_discount` = "Descuento". No copie los montos en dólares del punto de activación ni del límite de responsabilidad: están en la escala del modelo de CCRIF, no en la del catálogo del país.
@@ -107,9 +107,9 @@ Cómo se fija la prima de cada seguro que no trae una cotización. Todas las cla
 
 | Clave | Tipo | Por defecto | Descripción |
 | --- | --- | --- | --- |
-| `method` | `"ccrif_rule"`, `"market_curve"`, `"fixed_rol"` | `"ccrif_rule"` | Método para todos los seguros sin cotización |
-| `cutoff_rp` | número ≥ 1 | `10` | Años. En `ccrif_rule`, las rebanadas de la capa que se tocan con más frecuencia que 1 en `cutoff_rp` años se cotizan con la curva de mercado |
-| `flat_rol` | número en (0, 1] | `0.05` | En `ccrif_rule`, ROL de las rebanadas más remotas que el corte |
+| `method` | `"rol_rule"`, `"market_curve"`, `"fixed_rol"` | `"rol_rule"` | Método para todos los seguros sin cotización |
+| `cutoff_rp` | número ≥ 1 | `10` | Años. En `rol_rule`, las rebanadas de la capa que se tocan con más frecuencia que 1 en `cutoff_rp` años se cotizan con la curva de mercado |
+| `flat_rol` | número en (0, 1] | `0.05` | En `rol_rule`, ROL de las rebanadas más remotas que el corte |
 | `rate_on_line` | número en (0, 1] | `[cba.defaults.insurance].rate_on_line` o `0.05` | ROL para `fixed_rol` |
 | `market_curve_rp`, `market_curve_rol` | listas de igual longitud | tabla del corredor | Curva de mercado: ROL de una capa delgada según el período de retorno de evento en que se toca. `market_curve_rp` estrictamente creciente |
 | `market_curve_date` | texto | `"2026-08"` | Fecha de la curva; aparece en el reporte. Los precios de reaseguro son volátiles y estacionales |
@@ -117,7 +117,7 @@ Cómo se fija la prima de cada seguro que no trae una cotización. Todas las cla
 
 Métodos:
 
-- **`ccrif_rule`**: la capa se parte en rebanadas delgadas; cada una se cotiza en su propio período de retorno sobre la curva del país. Por debajo del corte, con la curva de mercado; por encima, con la tasa plana. Los valores por defecto del corte y de la tasa plana son una calibración del consultor contra precios de fondos soberanos paramétricos observados en la región.
+- **`rol_rule`**: la capa se parte en rebanadas delgadas; cada una se cotiza en su propio período de retorno sobre la curva del país. Por debajo del corte, con la curva de mercado; por encima, con la tasa plana. Los valores por defecto son consistentes con la estructura de precios de los mecanismos soberanos de mancomunación de riesgo; se recomienda sustituirlos por la cotización del país cuando esté disponible. Con la capa por defecto (1 en 15 a 1 en 50 años) todas las rebanadas quedan por encima del corte y la regla equivale a la tasa plana; en capas angostas cercanas al corte la prima puede quedar por debajo del pago esperado, y el reporte lo advierte.
 - **`market_curve`**: todas las rebanadas con la curva de mercado (reaseguro comercial).
 - **`fixed_rol`**: prima = ROL × límite de cobertura (comportamiento anterior a la v8).
 - **`quote`** (solo por instrumento): la prima bruta de una cotización real. Siempre tiene prioridad.

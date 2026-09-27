@@ -14,7 +14,7 @@ El motor de cálculo del LEC Tool está implementado en un conjunto de módulos 
 
 - **Umbrales por período de retorno**: la capa del seguro (y, opcionalmente, los umbrales del DDO y del PPO) se puede definir en años (`attachment_rp`, `exhaustion_rp`) en lugar de dólares. Se convierte con la curva del país que se corre, así que la misma estrategia sirve para cualquier país de `Country databases`.
 - **Límite de cobertura en dólares**: el seguro se dimensiona con `coverage_limit`; la cesión se calcula.
-- **Precio de la capa** (`[insurance_pricing]`): regla tipo fondo soberano (`ccrif_rule`, por defecto), curva de reaseguro comercial (`market_curve`), cotización real del país (`gross_premium`) o ROL fijo (`fixed_rol`, comportamiento anterior).
+- **Precio de la capa** (`[insurance_pricing]`): regla por tramos (`rol_rule`, por defecto), curva de reaseguro comercial (`market_curve`), cotización real del país (`gross_premium`) o ROL fijo (`fixed_rol`, comportamiento anterior).
 - **Pago del seguro**: proporcional, un pago por año y pago mínimo igual a la prima bruta, como en las pólizas soberanas paramétricas.
 - **Reporte del seguro**: capa en años y en dólares, fuente del precio, múltiplo implícito, B/C económico y fiscal (con descuento del donante) e indicadores de protección.
 - Integra los cambios de la entrega v7 del módulo CBA (gracia en PPO y DDO, disparo propio del PPO, compatibilidad NumPy 1.x/2.x). Detalle en `docs/v8_insurance_layer.md`.
