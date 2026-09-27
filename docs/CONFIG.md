@@ -153,6 +153,8 @@ Valores por defecto de los parámetros de costo de cada tipo de instrumento (mis
 
 Costo Neto Comparado. Si la tabla se omite, el CNC no se calcula.
 
+> **Advertencia: estos parámetros deben ajustarse al país que se corre.** Los valores de `config.toml` son los de Honduras (PIB del Banco Mundial 2024, spread soberano de calificación B). El CNC clasifica cada evento por su tamaño como fracción del PIB para fijar el spread de la deuda ex-post; si se corre otro país con el PIB de Honduras, los eventos parecen más o menos severos de lo que son y el ahorro del CNC queda distorsionado. Antes de correr un país, actualice `gdp` y `sovereign_base_spread` (y `base_rate` si corresponde). El resto de los resultados no depende de esta sección.
+
 | Clave | Tipo | Por defecto | Descripción |
 | --- | --- | --- | --- |
 | `enabled` | booleano | `true` | Calcula el CNC |

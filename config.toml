@@ -128,7 +128,9 @@ loan_interest_rate = 0.035
 repayment_years    = 5
 
 [cba.cnc]
-enabled               = true      # Comparative Net Cost: ex-ante instruments vs ex-post commercial debt
+# WARNING: set gdp and sovereign_base_spread for the country being run. The values
+# below are Honduras; with another country's curve they distort the CNC result.
+enabled               = true     # Comparative Net Cost: ex-ante instruments vs ex-post commercial debt
 gdp                   = 37094.0   # $MM, reference GDP of the country (default: Honduras 2024, World Bank)
 base_rate             = 0.035     # international base rate (SOFR)
 sovereign_base_spread = 0.05      # sovereign spread in ordinary conditions
