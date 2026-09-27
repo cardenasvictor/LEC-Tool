@@ -357,9 +357,6 @@ def generate_text_report(results) -> str:
         lines.append("  same amount, so this isolates the financing-cost differential")
         lines.append("  (not the size of coverage). Coverage adequacy is a separate")
         lines.append("  question — read the unpaid-loss indicators for that.")
-        lines.append("  Calibration (Honduras): GDP World Bank 2024; base rate SOFR;")
-        lines.append("  sovereign spread BID HO-O0008; tier structure per Cavallo et al.")
-        lines.append("  (IDB-WP-1257). Tier thresholds are an informed calibration.")
         lines.append("")
 
     # --- Sensitivity ---
